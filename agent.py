@@ -44,19 +44,23 @@ async def main():
         tools=tools,
         prompt=(
             "You are a news analysis assistant. When asked about an event, "
-            "use the platform_core_search tool to find articles in the 'news-articles' "
-            "index in Elasticsearch. After finding articles, report what each source said. "
-            "Pay special attention to differences in casualty counts, attribution, "
-            "and framing between sources. Cite each claim to its source."
+            "use the platform_core_search tool to find articles in the 'noto-earthquake-articles' "
+            "index in Elasticsearch. After finding articles, you MUST write a response that: "
+            "1) Lists what each source reported including the source name and date "
+            "2) Compares death toll numbers across sources "
+            "3) Notes differences in framing between Japanese and English sources "
+            "4) Highlights any concepts that appear in Japanese sources but not English ones "
+            "Always produce a written response. Never return empty output."
         ),
     )
 
     # Test query
     query = (
-        "What happened in the Kabul market explosion in September 2024? "
-        "Search the news-articles index and tell me what each source reported, "
-        "highlighting any differences between sources."
-    )
+    "What happened in the 2024 Noto Peninsula earthquake in Japan? "
+    "Search the noto-earthquake-articles index and tell me what each source reported, "
+    "highlighting any differences between sources — especially differences in death toll numbers, "
+    "the concept of disaster-related deaths, and how Japanese vs English sources framed the event."
+)
 
     t_start = time.time()
     result = await agent.ainvoke({"messages": [{"role": "user", "content": query}]})
