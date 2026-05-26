@@ -65,6 +65,13 @@ test_articles = [
     },
 ]
 
-actions = [{"_index": INDEX_NAME, "_source": doc} for doc in test_articles]
+actions = [
+    {
+        "_index": INDEX_NAME,
+        "_id": f"{doc['source']}-{doc['event_id']}".lower().replace(" ", "-"),
+        "_source": doc,
+    }
+    for doc in test_articles
+]
 success, failed = helpers.bulk(es_client, actions, refresh=True)
 print(f"Indexed {success} articles")
