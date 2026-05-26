@@ -1,6 +1,9 @@
 import os
 import time
 import asyncio
+import warnings
+warnings.filterwarnings("ignore", message="Key '.*' is not supported in schema")
+
 from dotenv import load_dotenv
 from langchain_google_vertexai import ChatVertexAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -19,6 +22,14 @@ def debug_print(label, content, truncate=500):
         text = text[:truncate] + "... [truncated]"
     print(f"[DEBUG] {label}: {text}")
 
+SYSTEM_PROMPT = (
+    "You are a news analysis assistant. When asked about an event, "
+    "use the platform_core_search tool to find articles in the 'news-articles' "
+    "index in Elasticsearch. After finding articles, report what each source said. "
+    "Pay special attention to differences in casualty counts, attribution, "
+    "and framing between sources. Cite each claim to its source."
+)
+
 async def main():
     # Connect to Elastic MCP
     client = MultiServerMCPClient({
@@ -31,25 +42,13 @@ async def main():
     tools = await client.get_tools()
     print(f"Loaded {len(tools)} tools")
 
-    # Initialize Gemini via Vertex AI
     llm = ChatVertexAI(
         model="gemini-2.5-flash",
         project="news-divergence-project",
         location="us-central1",
     )
 
-    # Create a ReAct agent that can decide when to call tools
-    agent = create_react_agent(
-        llm,
-        tools=tools,
-        prompt=(
-            "You are a news analysis assistant. When asked about an event, "
-            "use the platform_core_search tool to find articles in the 'news-articles' "
-            "index in Elasticsearch. After finding articles, report what each source said. "
-            "Pay special attention to differences in casualty counts, attribution, "
-            "and framing between sources. Cite each claim to its source."
-        ),
-    )
+    agent = create_react_agent(llm, tools, prompt=SYSTEM_PROMPT)
 
     # Test query
     query = (
@@ -83,7 +82,13 @@ async def main():
     print("\n" + "=" * 80)
     print("AGENT RESPONSE:")
     print("=" * 80)
-    print(result["messages"][-1].content)
+    content = result["messages"][-1].content
+    if isinstance(content, list):
+        content = "".join(
+            block.get("text", "") for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        )
+    print(content)
 
 if __name__ == "__main__":
     asyncio.run(main())

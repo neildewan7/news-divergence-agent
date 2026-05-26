@@ -26,7 +26,12 @@
 - Every claim in output must link to its source article — no floating numbers
 
 ## Repo layout (current)
-- agent.py — main agent loop
+- src/agent.py — CLI entry point for local testing
+- src/app.py — Flask web server; Cloud Run entry point
+- scripts/index_test_data.py — indexes synthetic articles into Elastic
+- scripts/agent_test.py — smoke test: MCP + Gemini connectivity
+- scripts/test_mcp.py — smoke test: MCP tools list only
 - CHANGELOG.md — append an entry after every meaningful session
 - CONVENTIONS.md — this file; update if conventions change
 - PROJECT_KNOWLEDGE.md — product context and decisions; update if direction changes
+- DEPLOYMENT.md — step-by-step deploy guide for teammates

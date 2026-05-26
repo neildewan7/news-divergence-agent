@@ -45,6 +45,48 @@ Backup: a natural disaster in Southeast Asia or Latin America (TBD).
 - Corpus: pre-indexed, hand-curated for demo
 - License: MIT
 
+## Hackathon Rules — Key Constraints
+
+Source: Google Cloud Rapid Agent Hackathon Official Rules
+Contest period: May 5 – June 11, 2026, 2:00 PM PT (hard deadline)
+Track: Elastic
+
+### Hard submission requirements (Stage 1 pass/fail)
+- Hosted URL to running project (Cloud Run satisfies this)
+- Public GitHub repo with open source license (MIT — done)
+- Demo video: max 3 minutes, uploaded to YouTube or Vimeo, English or English subtitles
+- Text description on Devpost: features, technologies, data sources, learnings
+- Project must be newly created during contest period (May 5 – June 11)
+
+### AI tool restrictions
+- Required: Gemini as the LLM (via Vertex AI — compliant)
+- Required: Google Cloud Agent Builder / Vertex AI platform
+- Permitted: built-in AI features in Elastic (partner track)
+- NOT permitted: any other AI model providers (OpenAI, Anthropic, Cohere, etc.)
+- LangChain/LangGraph are orchestration frameworks, not AI tools — permitted
+- Gray area: "Google Cloud Agent Builder" — we use Vertex AI Python SDK,
+  same platform, different interface. Acceptable but monitor.
+
+### Partner track rules
+- Must use Elastic products meaningfully (not superficially)
+- Must not use tools that compete with Elastic (other search/vector DBs as
+  primary data store)
+- MCP integration must be demonstrated clearly in the demo
+
+### Judging criteria (Stage 2, equal weight)
+1. Technological Implementation — quality of Google Cloud + Elastic integration
+2. Design — UX and user experience
+3. Potential Impact — impact on target communities
+4. Quality of Idea — creativity and uniqueness
+
+### What we need before June 11
+- [ ] Cloud Run deployment live with public URL
+- [ ] Frontend (Design criterion — currently our weakest area)
+- [ ] Real news corpus indexed (not synthetic)
+- [ ] Structured output format (not prose)
+- [ ] Demo video (YouTube/Vimeo, under 3 min, English)
+- [ ] Devpost submission with all required fields
+
 ## Open questions
 - Specific demo incident and exact corpus article list
 - How much non-English original-language content is obtainable
