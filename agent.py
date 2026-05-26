@@ -1,11 +1,23 @@
 import os
+import time
 import asyncio
 from dotenv import load_dotenv
 from langchain_google_vertexai import ChatVertexAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.prebuilt import create_react_agent
+from langchain_core.messages import AIMessage, ToolMessage
 
 load_dotenv()
+
+DEBUG = True
+
+def debug_print(label, content, truncate=500):
+    if not DEBUG:
+        return
+    text = str(content)
+    if len(text) > truncate:
+        text = text[:truncate] + "... [truncated]"
+    print(f"[DEBUG] {label}: {text}")
 
 async def main():
     # Connect to Elastic MCP
@@ -46,7 +58,26 @@ async def main():
         "highlighting any differences between sources."
     )
 
+    t_start = time.time()
     result = await agent.ainvoke({"messages": [{"role": "user", "content": query}]})
+    elapsed = time.time() - t_start
+
+    # Debug: walk every message in the agent's internal trace
+    if DEBUG:
+        for i, msg in enumerate(result["messages"]):
+            print(f"\n===== STEP {i} =====")
+            if isinstance(msg, AIMessage):
+                if msg.tool_calls:
+                    for tc in msg.tool_calls:
+                        print(f"TOOL CALL: {tc['name']}")
+                        debug_print("args", tc["args"])
+                else:
+                    debug_print("GEMINI", msg.content)
+            elif isinstance(msg, ToolMessage):
+                print(f"TOOL RESPONSE [{msg.name}]:")
+                debug_print("content", msg.content)
+
+    print(f"\nExecution time: {elapsed:.2f}s")
 
     # Print the final response
     print("\n" + "=" * 80)
