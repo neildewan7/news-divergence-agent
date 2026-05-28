@@ -1,0 +1,783 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>News Divergence Agent</title>
+  <style>
+    :root {
+      --bg: #07111f;
+      --panel: #0d1828;
+      --panel-2: #101d30;
+      --line: #26364d;
+      --line-strong: #3d4e66;
+      --text: #edf3fb;
+      --muted: #9eb0c6;
+      --faint: #6f8199;
+      --accent: #d8a23a;
+      --accent-bg: rgba(216, 162, 58, 0.09);
+      --danger: #ffb4a8;
+      --button: #e7edf5;
+      --button-text: #07111f;
+      --mono: "SFMono-Regular", "Roboto Mono", "Cascadia Mono", "Liberation Mono", Menlo, Consolas, monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+    }
+
+    .page {
+      width: min(1180px, calc(100% - 32px));
+      min-height: 100vh;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      padding: 28px 0 18px;
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 18px;
+    }
+
+    .masthead {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    .status-pill {
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1;
+      padding: 7px 9px;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    form {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+    }
+
+    input {
+      min-width: 0;
+      width: 100%;
+      height: 48px;
+      border: 1px solid var(--line-strong);
+      border-radius: 4px;
+      background: #0a1626;
+      color: var(--text);
+      font: 16px var(--sans);
+      padding: 0 15px;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: #73859e;
+    }
+
+    input::placeholder {
+      color: var(--faint);
+    }
+
+    button {
+      height: 48px;
+      border: 1px solid var(--button);
+      border-radius: 4px;
+      background: var(--button);
+      color: var(--button-text);
+      font: 700 13px var(--sans);
+      padding: 0 18px;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      cursor: wait;
+      opacity: 0.64;
+    }
+
+    main {
+      flex: 1;
+      padding: 22px 0;
+    }
+
+    .empty-state,
+    .loading-state,
+    .error-state {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--muted);
+      font: 15px/1.6 var(--mono);
+      min-height: 190px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 28px;
+    }
+
+    .error-state {
+      color: var(--danger);
+    }
+
+    .brief {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.55fr);
+      gap: 16px;
+      font-family: var(--mono);
+    }
+
+    .section {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      padding: 16px;
+      min-width: 0;
+    }
+
+    .section h2 {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.2;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    .summary {
+      grid-column: 1 / -1;
+    }
+
+    .summary-line {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--text);
+    }
+
+    .divergence {
+      border-color: rgba(216, 162, 58, 0.78);
+      background: linear-gradient(90deg, var(--accent-bg), var(--panel) 38%);
+      box-shadow: inset 4px 0 0 var(--accent);
+    }
+
+    .divergence h2 {
+      color: #f1c267;
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    li {
+      margin: 0 0 10px;
+      line-height: 1.55;
+      color: #dce6f2;
+    }
+
+    li:last-child {
+      margin-bottom: 0;
+    }
+
+    .claim {
+      border-top: 1px solid rgba(216, 162, 58, 0.28);
+      padding-top: 12px;
+      margin-top: 12px;
+    }
+
+    .claim:first-of-type {
+      border-top: 0;
+      padding-top: 0;
+      margin-top: 0;
+    }
+
+    .claim-title {
+      margin: 0 0 8px;
+      color: var(--text);
+      font-weight: 700;
+      line-height: 1.5;
+    }
+
+    .claim-source {
+      margin: 0 0 6px;
+      color: #dce6f2;
+      line-height: 1.5;
+    }
+
+    .source-name {
+      color: #f1c267;
+      font-weight: 700;
+    }
+
+    .sources {
+      display: grid;
+      gap: 8px;
+    }
+
+    .source-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--text);
+      min-height: 42px;
+      padding: 10px 12px;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .source-item:hover,
+    .source-item:focus {
+      border-color: var(--line-strong);
+      outline: none;
+    }
+
+    .tag {
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .raw-note {
+      margin-top: 16px;
+      color: var(--faint);
+      font: 12px/1.5 var(--mono);
+    }
+
+    details {
+      grid-column: 1 / -1;
+      border: 1px solid var(--line);
+      background: #081423;
+      font-family: var(--mono);
+    }
+
+    summary {
+      cursor: pointer;
+      padding: 12px 16px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    pre {
+      border-top: 1px solid var(--line);
+      margin: 0;
+      padding: 16px;
+      color: #d7e2ef;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font: 13px/1.55 var(--mono);
+    }
+
+    footer {
+      border-top: 1px solid var(--line);
+      color: var(--faint);
+      font: 12px var(--sans);
+      padding-top: 14px;
+    }
+
+    @media (max-width: 760px) {
+      .page {
+        width: min(100% - 24px, 1180px);
+        padding-top: 18px;
+      }
+
+      .masthead {
+        display: block;
+      }
+
+      .status-pill {
+        display: inline-block;
+        margin-top: 10px;
+      }
+
+      form,
+      .brief {
+        grid-template-columns: 1fr;
+      }
+
+      button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <div class="masthead">
+        <h1>News Divergence Agent</h1>
+        <div class="status-pill" id="serviceStatus">Service status: unchecked</div>
+      </div>
+      <form id="analysisForm">
+        <input
+          id="queryInput"
+          type="search"
+          placeholder="Describe an event to analyze across sources..."
+          autocomplete="off"
+          required
+        >
+        <button id="submitButton" type="submit">Analyze</button>
+      </form>
+    </header>
+
+    <main id="results" aria-live="polite">
+      <div class="empty-state">Submit an event description to generate a source divergence brief.</div>
+    </main>
+
+    <footer>Powered by Gemini + Elastic</footer>
+  </div>
+
+  <script>
+    const API_BASE_URL = "https://news-divergence-agent-314861703491.us-central1.run.app";
+    const REQUEST_TIMEOUT_MS = 125000;
+
+    const form = document.getElementById("analysisForm");
+    const input = document.getElementById("queryInput");
+    const button = document.getElementById("submitButton");
+    const results = document.getElementById("results");
+    const serviceStatus = document.getElementById("serviceStatus");
+
+    const knownSources = [
+      "Reuters",
+      "Associated Press",
+      "AP",
+      "AFP",
+      "BBC",
+      "ToloNews",
+      "TOLOnews",
+      "Pajhwok Afghan News",
+      "Pajhwok",
+      "UNAMA",
+      "ICRC",
+      "Al Jazeera",
+      "Khaama Press",
+      "Ariana News",
+      "Amu TV",
+      "Hasht-e Subh",
+      "Salam Watandar"
+    ];
+
+    const languageHints = {
+      "Reuters": "EN",
+      "Associated Press": "EN",
+      "AP": "EN",
+      "AFP": "EN",
+      "BBC": "EN",
+      "ToloNews": "FA",
+      "TOLOnews": "FA",
+      "Pajhwok Afghan News": "PS",
+      "Pajhwok": "PS",
+      "UNAMA": "EN",
+      "ICRC": "EN",
+      "Al Jazeera": "EN",
+      "Khaama Press": "EN",
+      "Ariana News": "FA",
+      "Amu TV": "FA",
+      "Hasht-e Subh": "FA",
+      "Salam Watandar": "PS"
+    };
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const query = input.value.trim();
+      if (!query) return;
+
+      setLoading(true);
+      results.innerHTML = '<div class="loading-state">Analyzing sources...</div>';
+
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/analyze`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query }),
+          signal: controller.signal
+        });
+
+        if (!response.ok) throw new Error(`Analysis failed: ${response.status}`);
+        const payload = await response.json();
+        renderBrief(query, payload.response || "", payload.execution_time_seconds);
+      } catch (error) {
+        console.error(error);
+        results.innerHTML = '<div class="error-state">Unable to reach analysis service — please try again</div>';
+      } finally {
+        window.clearTimeout(timeout);
+        setLoading(false);
+      }
+    });
+
+    checkHealth();
+
+    async function checkHealth() {
+      try {
+        const response = await fetch(`${API_BASE_URL}/health`);
+        if (!response.ok) throw new Error("Health check failed");
+        const payload = await response.json();
+        serviceStatus.textContent = payload.status === "ok" ? "Service status: ok" : "Service status: unknown";
+      } catch {
+        serviceStatus.textContent = "Service status: unavailable";
+      }
+    }
+
+    function setLoading(isLoading) {
+      button.disabled = isLoading;
+      input.disabled = isLoading;
+      button.textContent = isLoading ? "Analyzing" : "Analyze";
+    }
+
+    function renderBrief(query, responseText, elapsedSeconds) {
+      const brief = parseResponse(query, responseText);
+      const elapsed = typeof elapsedSeconds === "number" ? ` Analysis time: ${elapsedSeconds}s.` : "";
+
+      results.innerHTML = `
+        <article class="brief">
+          <section class="section summary">
+            <h2>Event Summary</h2>
+            <p class="summary-line">${escapeHtml(brief.summary)}${escapeHtml(elapsed)}</p>
+          </section>
+
+          <section class="section">
+            <h2>Agreed Facts</h2>
+            ${renderList(brief.agreedFacts)}
+          </section>
+
+          <section class="section">
+            <h2>Sources</h2>
+            <div class="sources">
+              ${brief.sources.map(renderSource).join("")}
+            </div>
+          </section>
+
+          <section class="section divergence">
+            <h2>Divergence</h2>
+            ${renderDivergence(brief.divergences)}
+          </section>
+
+          <details>
+            <summary>Original Agent Response</summary>
+            <pre>${escapeHtml(responseText || "No response text returned.")}</pre>
+          </details>
+        </article>
+      `;
+    }
+
+    function parseResponse(query, text) {
+      const cleanText = normalizeText(text);
+      const sections = splitSections(cleanText);
+      const sources = extractSources(cleanText);
+      const sourceCount = sources.length || countSources(cleanText);
+      const summary = buildSummary(query, sections, sourceCount);
+      const agreedFacts = extractAgreedFacts(sections, cleanText);
+      const divergences = extractDivergences(sections, cleanText);
+
+      return {
+        summary,
+        agreedFacts: agreedFacts.length ? agreedFacts : ["No shared facts were clearly identified in the response."],
+        divergences: divergences.length ? divergences : [{ title: "No explicit source disagreement detected", claims: ["The response did not clearly separate points of divergence. Review the original agent response below."] }],
+        sources: sources.length ? sources : [{ name: "Sources not clearly identified", language: "--" }]
+      };
+    }
+
+    function normalizeText(text) {
+      return String(text || "")
+        .replace(/\r/g, "")
+        .replace(/\*\*/g, "")
+        .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+        .trim();
+    }
+
+    function splitSections(text) {
+      const headings = [
+        ["summary", /^(event summary|summary|overview|event)$/i],
+        ["agreed", /^(agreed facts|common facts|shared facts|consensus|agreement|what sources agree on)$/i],
+        ["divergence", /^(divergence|key differences|differences|points of disagreement|conflicting claims|contradictions|framing differences)$/i],
+        ["sources", /^(sources|source list|articles analyzed|citations)$/i]
+      ];
+      const sections = {};
+      let active = "body";
+
+      text.split("\n").forEach((line) => {
+        const candidate = line.replace(/[:\-]+$/g, "").trim();
+        const match = headings.find(([, pattern]) => pattern.test(candidate));
+        if (match) {
+          active = match[0];
+          sections[active] = sections[active] || [];
+          return;
+        }
+        sections[active] = sections[active] || [];
+        sections[active].push(line);
+      });
+
+      Object.keys(sections).forEach((key) => {
+        sections[key] = sections[key].join("\n").trim();
+      });
+      return sections;
+    }
+
+    function buildSummary(query, sections, sourceCount) {
+      const summaryLine = firstMeaningfulLine(sections.summary || sections.body || "");
+      const event = (summaryLine || query)
+        .replace(/\s*\d+\s+(?:sources|articles|reports)\s+analyz(?:ed|ed\.)/i, "")
+        .replace(/[.\s]+$/g, "")
+        .trim();
+      const countText = sourceCount ? `${sourceCount} source${sourceCount === 1 ? "" : "s"} analyzed` : "source count not clearly stated";
+      return `${stripBullet(event)} — ${countText}.`;
+    }
+
+    function extractAgreedFacts(sections, text) {
+      const agreedText = sections.agreed || findBlockAfterLabel(text, /(?:agreed facts|common facts|shared facts|consensus)/i);
+      let facts = extractBullets(agreedText);
+      if (!facts.length) {
+        facts = sentencesFrom(agreedText).filter((sentence) => !looksLikeDivergence(sentence)).slice(0, 5);
+      }
+      return dedupe(facts.map(stripBullet)).slice(0, 7);
+    }
+
+    function extractDivergences(sections, text) {
+      const divergenceText = sections.divergence || findBlockAfterLabel(text, /(?:key differences|divergence|differences|conflicting claims|contradictions)/i);
+      const bullets = extractBullets(divergenceText);
+
+      if (bullets.length) {
+        return bullets.slice(0, 6).map((line) => {
+          const cleaned = stripBullet(line);
+          const parts = cleaned.split(/:\s+/);
+          const title = parts.length > 1 ? parts.shift() : cleaned;
+          const detail = parts.length ? parts.join(": ") : cleaned;
+          const claims = splitSourceClaims(detail);
+          return {
+            title,
+            claims: claims.length ? claims : [detail]
+          };
+        });
+      }
+
+      const lines = meaningfulLines(divergenceText);
+      const grouped = [];
+      let current = null;
+
+      lines.forEach((line) => {
+        const cleaned = stripBullet(line);
+        if (!cleaned) return;
+        const isSourceClaim = hasSourceCue(cleaned);
+        const startsGroup = !isSourceClaim || /(?:count|reported|claimed|said|attributed|framed|difference|whereas|while)/i.test(cleaned);
+
+        if (!current || (startsGroup && !isSourceClaim && current.claims.length)) {
+          current = { title: cleaned, claims: [] };
+          grouped.push(current);
+        } else if (!current) {
+          current = { title: "Reported disagreement", claims: [] };
+          grouped.push(current);
+        } else if (isSourceClaim) {
+          current.claims.push(cleaned);
+        } else {
+          current.claims.push(cleaned);
+        }
+      });
+
+      if (!grouped.length) {
+        const likelySentences = sentencesFrom(text).filter(looksLikeDivergence).slice(0, 6);
+        return likelySentences.map((sentence) => ({ title: sentence, claims: [] }));
+      }
+
+      return grouped.slice(0, 6).map((item) => ({
+        title: item.title,
+        claims: item.claims.length ? item.claims.slice(0, 5) : splitSourceClaims(item.title)
+      }));
+    }
+
+    function extractSources(text) {
+      const found = [];
+      meaningfulLines(text).forEach((line) => {
+        const explicitTag = stripBullet(line).match(/^(.{2,70}?)[\s,;:-]*\[(EN|FA|PS|AR|DA|UR)\]\s*$/i);
+        if (explicitTag) {
+          found.push({ name: tidySource(explicitTag[1]), language: explicitTag[2].toUpperCase() });
+        }
+      });
+
+      knownSources.forEach((source) => {
+        const pattern = new RegExp(`\\b${escapeRegExp(source)}\\b`, "i");
+        if (pattern.test(text)) {
+          found.push({ name: source, language: languageHints[source] || "--" });
+        }
+      });
+
+      const sourceLines = meaningfulLines(text).filter((line) => {
+        const stripped = stripBullet(line);
+        return /^(?:source|article)\s*\d*\s*[:.-]\s*\S/i.test(stripped) || /^\[(EN|FA|PS|AR|DA|UR)\]\s*\S/i.test(stripped);
+      });
+      sourceLines.forEach((line) => {
+        const tag = line.match(/\[(EN|FA|PS|AR|DA|UR)\]/i);
+        const name = tidySource(line.replace(/^(source|article)\s*\d*[:.-]?\s*/i, "").replace(/\[[A-Z]{2}\]/i, ""));
+        if (name && name.length < 70) {
+          found.push({ name, language: tag ? tag[1].toUpperCase() : inferLanguage(name) });
+        }
+      });
+
+      return dedupeSources(found);
+    }
+
+    function countSources(text) {
+      const countMatch = text.match(/(\d+)\s+(?:sources|articles|reports)\b/i);
+      return countMatch ? Number(countMatch[1]) : 0;
+    }
+
+    function renderList(items) {
+      return `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+    }
+
+    function renderDivergence(items) {
+      return items.map((item) => {
+        const claims = item.claims && item.claims.length
+          ? item.claims.map((claim) => `<p class="claim-source">${highlightSource(escapeHtml(claim))}</p>`).join("")
+          : '<p class="claim-source">No source-by-source claim detail was separated in the response.</p>';
+        return `<div class="claim"><p class="claim-title">${escapeHtml(item.title)}</p>${claims}</div>`;
+      }).join("");
+    }
+
+    function renderSource(source) {
+      return `
+        <a class="source-item" href="#" aria-label="${escapeHtml(source.name)} source placeholder">
+          <span>${escapeHtml(source.name)}</span>
+          <span class="tag">[${escapeHtml(source.language || "--")}]</span>
+        </a>
+      `;
+    }
+
+    function highlightSource(html) {
+      knownSources.forEach((source) => {
+        html = html.replace(new RegExp(`\\b(${escapeRegExp(source)})\\b`, "gi"), '<span class="source-name">$1</span>');
+      });
+      return html;
+    }
+
+    function extractBullets(text) {
+      return meaningfulLines(text)
+        .filter((line) => /^\s*(?:[-*•]|\d+[.)])\s+/.test(line))
+        .map(stripBullet);
+    }
+
+    function meaningfulLines(text) {
+      return String(text || "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+    }
+
+    function sentencesFrom(text) {
+      return String(text || "")
+        .replace(/\n+/g, " ")
+        .split(/(?<=[.!?])\s+/)
+        .map((sentence) => sentence.trim())
+        .filter((sentence) => sentence.length > 20);
+    }
+
+    function firstMeaningfulLine(text) {
+      return meaningfulLines(text).map(stripBullet).find((line) => line.length > 8) || "";
+    }
+
+    function findBlockAfterLabel(text, labelPattern) {
+      const lines = text.split("\n");
+      const index = lines.findIndex((line) => labelPattern.test(line));
+      if (index === -1) return "";
+      const block = [];
+      for (let i = index + 1; i < lines.length; i += 1) {
+        if (/^[A-Z][A-Z\s-]{3,}:?$/.test(lines[i].trim())) break;
+        block.push(lines[i]);
+      }
+      return block.join("\n").trim();
+    }
+
+    function stripBullet(text) {
+      return String(text || "")
+        .replace(/^\s*(?:[-*•]|\d+[.)])\s+/, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    function splitSourceClaims(text) {
+      const pieces = String(text || "").split(/\s+(?=(?:Reuters|AP|AFP|BBC|ToloNews|TOLOnews|Pajhwok|UNAMA|ICRC|Al Jazeera|Khaama|Ariana|Amu|Hasht|Salam)\b)/);
+      return pieces.length > 1 ? pieces.map((piece) => stripBullet(piece).replace(/[;,\s]+$/g, "")) : [];
+    }
+
+    function looksLikeDivergence(text) {
+      return /(?:however|whereas|while|but|different|difference|diverg|conflict|contradict|reported|claimed|attributed|casualt|death|injur|toll|blame|responsib)/i.test(text);
+    }
+
+    function hasSourceCue(text) {
+      return knownSources.some((source) => new RegExp(`\\b${escapeRegExp(source)}\\b`, "i").test(text));
+    }
+
+    function tidySource(text) {
+      return stripBullet(text)
+        .replace(/https?:\/\/\S+/g, "")
+        .replace(/["'`]/g, "")
+        .replace(/\s*[-:|].*$/, "")
+        .trim();
+    }
+
+    function inferLanguage(name) {
+      const source = knownSources.find((item) => new RegExp(`\\b${escapeRegExp(item)}\\b`, "i").test(name));
+      return source ? languageHints[source] || "--" : "--";
+    }
+
+    function dedupe(items) {
+      return [...new Set(items.filter(Boolean))];
+    }
+
+    function dedupeSources(sources) {
+      const seen = new Set();
+      return sources
+        .map((source) => ({
+          name: source.name === "AP" ? "Associated Press" : source.name,
+          language: source.language || inferLanguage(source.name)
+        }))
+        .filter((source) => {
+          const key = source.name.toLowerCase();
+          if (!source.name || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+    }
+
+    function escapeRegExp(text) {
+      return String(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+  </script>
+</body>
+</html>

@@ -1,26 +1,50 @@
 import os
+import sys
+import re
+import json
 import time
 import asyncio
 import threading
 import warnings
 warnings.filterwarnings("ignore", message="Key '.*' is not supported in schema")
 
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from langchain_google_vertexai import ChatVertexAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.prebuilt import create_react_agent
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
+from gdelt_pipeline import populate_index_for_query
+
 load_dotenv()
 
 DEBUG = False
 
 SYSTEM_PROMPT = (
-    "You are a news analysis assistant. When asked about an event, "
-    "use the platform_core_search tool to find articles in the 'news-articles' "
-    "index in Elasticsearch. After finding articles, report what each source said. "
-    "Pay special attention to differences in casualty counts, attribution, "
-    "and framing between sources. Cite each claim to its source."
+    "You are a humanitarian news analysis assistant helping researchers understand "
+    "how the same disaster or conflict event is reported across different sources.\n\n"
+    "When given a query, use the platform_core_search tool to search the news-articles "
+    "Elasticsearch index.\n\n"
+    "Structure your response in exactly these four sections:\n\n"
+    "## AGREED FACTS\n"
+    "Bullet points of claims confirmed by multiple sources.\n\n"
+    "## DIVERGENCE\n"
+    "The most critical section. For each factual disagreement, list exactly which source "
+    "reported what. Always flag casualty count conflicts explicitly. Note if government "
+    "sources systematically differ from NGO or civil society sources.\n\n"
+    "## SOURCE BREAKDOWN\n"
+    "List each source with format:\n"
+    "- [SOURCE NAME] | [TYPE: wire/ngo/government/local_press] | [LANGUAGE] | "
+    "Brief note on their framing angle\n\n"
+    "## CONFIDENCE SUMMARY\n"
+    "For each major claim, one line:\n"
+    "'HIGH confidence (N/N sources agree): [claim]'\n"
+    "'CONTESTED (N sources say X, N sources say Y): [claim]'\n\n"
+    "Every claim must be cited to its source. "
+    "Never assert anything beyond what a source explicitly said. "
+    "If fewer than 3 sources are found, say so clearly and suggest the user try a broader query."
 )
 
 # One persistent event loop in a background thread so gRPC channels (Vertex AI)
@@ -49,7 +73,53 @@ async def _build_agent():
 # Build the agent in the persistent loop at startup
 _agent = asyncio.run_coroutine_threadsafe(_build_agent(), _loop).result(timeout=60)
 
+# Separate lightweight LLM instance for synchronous extraction calls
+_extract_llm = ChatVertexAI(
+    model="gemini-2.5-flash",
+    project="news-divergence-project",
+    location="us-central1",
+)
+
 app = Flask(__name__)
+
+
+def extract_query_params(user_query: str) -> dict:
+    """
+    Ask Gemini to extract GDELT search parameters from a natural-language query.
+    Returns {"keywords": str, "start_date": str, "end_date": str} in YYYYMMDD000000 format.
+    Falls back to the past 180 days if extraction fails.
+    """
+    today = datetime.utcnow()
+    fallback = {
+        "keywords": user_query,
+        "start_date": (today - timedelta(days=180)).strftime("%Y%m%d") + "000000",
+        "end_date": today.strftime("%Y%m%d") + "000000",
+    }
+
+    prompt = (
+        "Extract search parameters from this news query. Return JSON only with keys: "
+        "keywords (AND-separated terms, no quotes), "
+        "start_date (YYYYMMDD000000), end_date (YYYYMMDD000000). "
+        "If no date is mentioned, set end_date to today and start_date to 180 days ago. "
+        f"Query: {user_query}"
+    )
+
+    try:
+        response = _extract_llm.invoke(prompt)
+        text = response.content if hasattr(response, "content") else str(response)
+        # Extract the first JSON object from the response
+        match = re.search(r'\{[^{}]+\}', text, re.DOTALL)
+        if match:
+            parsed = json.loads(match.group())
+            return {
+                "keywords": parsed.get("keywords", user_query),
+                "start_date": parsed.get("start_date", fallback["start_date"]),
+                "end_date": parsed.get("end_date", fallback["end_date"]),
+            }
+    except Exception as exc:
+        print(f"extract_query_params failed: {exc}")
+
+    return fallback
 
 
 @app.route("/health")
@@ -64,11 +134,28 @@ def analyze():
     if not query:
         return jsonify({"error": "query is required"}), 400
 
+    # Extract GDELT search parameters from the user query
+    params = extract_query_params(query)
+    keywords = params["keywords"]
+    start_date = params["start_date"]
+    end_date = params["end_date"]
+
+    # Index fresh articles from GDELT before running the agent
+    try:
+        newly_indexed = populate_index_for_query(
+            keywords,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    except Exception as exc:
+        print(f"GDELT pipeline error (non-fatal): {exc}")
+        newly_indexed = 0
+
     async def _run():
         return await _agent.ainvoke({"messages": [{"role": "user", "content": query}]})
 
     t_start = time.time()
-    result = asyncio.run_coroutine_threadsafe(_run(), _loop).result(timeout=120)
+    result = asyncio.run_coroutine_threadsafe(_run(), _loop).result(timeout=180)
     elapsed = round(time.time() - t_start, 2)
 
     content = result["messages"][-1].content
@@ -82,6 +169,7 @@ def analyze():
 
     return jsonify({
         "response": response_text,
+        "sources_indexed": newly_indexed,
         "execution_time_seconds": elapsed,
     })
 

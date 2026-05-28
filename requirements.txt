@@ -6,3 +6,8 @@ langgraph==1.2.1
 langchain
 google-cloud-aiplatform
 python-dotenv==1.2.2
+gdeltdoc
+pandas
+trafilatura
+elasticsearch
+lxml_html_clean
