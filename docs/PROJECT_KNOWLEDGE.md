@@ -27,10 +27,20 @@ across languages. This agent automates the first pass of that work.
 - Make any factual assertion beyond what a cited source said
 
 ## Demo case
-Provisional: Kabul market explosion, September 2024.
-Corpus: hand-curated, pre-indexed. Sources include Reuters, AP, AFP, ToloNews,
-Pajhwok Afghan News, BBC, ICRC public reports, UNAMA where available.
-Backup: a natural disaster in Southeast Asia or Latin America (TBD).
+**Libya/Derna floods, September 2023 (Storm Daniel).**
+Two dams (Abu Mansur and Bilad) above Derna, Libya collapsed on September 10–11 2023
+following Storm Daniel. Casualty estimates varied from ~3,800 (Libyan eastern government)
+to 11,000+ (UN OCHA), with thousands still unaccounted for weeks later. This wide
+divergence between official and international figures is the core demonstration of the
+tool's value.
+
+Corpus: live-indexed from GDELT at query time, supplemented by 5 synthetic fallback
+articles (sources labelled "Synthetic*"). Real GDELT coverage returns 50 articles per
+query page across English, French, Greek — from sources including AFP, Reuters, CNN,
+Al Jazeera, France24, RFI, Al-Monitor, Libya Observer, and others.
+
+Previous demo case (Kabul market explosion, September 2024) retired — insufficient
+GDELT coverage and weaker casualty-count divergence signal.
 
 ## Judging criteria (equal weight, Stage 2)
 1. Technological implementation
@@ -41,9 +51,12 @@ Backup: a natural disaster in Southeast Asia or Latin America (TBD).
 ## Decisions made
 - Partner track: Elastic
 - Framing: humanitarian / accountability research
-- v1 languages: English + Dari/Pashto/Arabic (adjustable)
-- Corpus: pre-indexed, hand-curated for demo
+- v1 languages: English, French, Greek (confirmed from GDELT); Arabic TBD
+- Corpus: live from GDELT at query time; 5 synthetic articles as fallback
 - License: MIT
+- Structured output: four fixed sections (AGREED FACTS / DIVERGENCE / SOURCE BREAKDOWN /
+  CONFIDENCE SUMMARY) enforced via SYSTEM_PROMPT in src/app.py
+- Source type taxonomy: wire / international / local_press / ngo / government / unknown
 
 ## Hackathon Rules — Key Constraints
 
@@ -80,16 +93,18 @@ Track: Elastic
 4. Quality of Idea — creativity and uniqueness
 
 ### What we need before June 11
-- [ ] Cloud Run deployment live with public URL
+- [x] Cloud Run deployment live with public URL
+- [x] Real news corpus indexed (GDELT pipeline live, 30+ real articles per query)
+- [x] Structured output format (4-section SYSTEM_PROMPT enforced)
+- [ ] Cloud Run redeployment with current codebase (GDELT pipeline + new prompt)
 - [ ] Frontend (Design criterion — currently our weakest area)
-- [ ] Real news corpus indexed (not synthetic)
-- [ ] Structured output format (not prose)
 - [ ] Demo video (YouTube/Vimeo, under 3 min, English)
 - [ ] Devpost submission with all required fields
 
 ## Open questions
-- Specific demo incident and exact corpus article list
-- How much non-English original-language content is obtainable
-- Whether to add source-type filter in UI (wire / NGO / local / government)
-- Backup demo case selection
+- Arabic-language coverage: GDELT returns English/French/Greek for Derna queries;
+  Arabic articles may require native-script query terms or `sourcelang:Arabic` filter
+- Whether to add source-type filter in the frontend UI (wire / NGO / local / government)
 - Whether "claim coverage" count (N sources report this claim) is v1 or v2
+- GDELT fetch failure rate (~40%): many domains are behind paywalls; consider
+  caching fetched text or pre-warming index before demo

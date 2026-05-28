@@ -47,7 +47,7 @@ curl http://localhost:8080/health
 # Agent query
 curl -X POST http://localhost:8080/analyze \
   -H "Content-Type: application/json" \
-  -d '{"query": "What happened in the Kabul market explosion in September 2024?"}'
+  -d '{"query": "Libya Derna floods September 2023"}'
 ```
 
 Replace `localhost:8080` with the live URL to test the deployed version.
@@ -112,8 +112,19 @@ gcloud run services describe news-divergence-agent \
 ## Utility scripts
 
 ```bash
-# Re-index test data into Elastic (run from repo root)
+# Re-index synthetic fallback articles into Elastic (Libya/Derna demo case)
 python scripts/index_test_data.py
+
+# Probe GDELT coverage for the demo event (run before changing demo case)
+python scripts/test_gdelt.py
+
+# Run GDELT pipeline manually to pre-warm the index
+python -c "
+import sys; sys.path.insert(0, 'scripts')
+from gdelt_pipeline import populate_index_for_query
+populate_index_for_query('Derna AND flood AND Libya',
+                         start_date='2023-09-08', end_date='2023-10-10')
+"
 
 # Smoke test: MCP connection only
 python scripts/test_mcp.py
@@ -121,6 +132,10 @@ python scripts/test_mcp.py
 # Smoke test: MCP + Gemini connectivity
 python scripts/agent_test.py
 ```
+
+> **Note on dependencies**: `trafilatura` requires `lxml_html_clean` (listed in
+> requirements.txt). If you see an `ImportError` about `lxml.html.clean`, run
+> `pip install lxml_html_clean`.
 
 ## Environment variables
 
