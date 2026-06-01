@@ -28,9 +28,12 @@ SYSTEM_PROMPT = (
     "You are a humanitarian news analysis assistant helping researchers understand "
     "how the same disaster or conflict event is reported across different sources.\n\n"
     "When given a query, use the platform_core_search tool to search the news-articles "
-    "Elasticsearch index. IMPORTANT: always include time_range when calling "
-    "platform_core_search — set from to 'now-3y' and to to 'now' unless the user "
-    "specifies a different period. Never call the tool without time_range.\n\n"
+    "Elasticsearch index.\n\n"
+    "CRITICAL: you MUST always pass time_range when calling platform_core_search. "
+    "The tool will reject calls that omit it. Always use exactly this structure:\n"
+    '  time_range: {"from": "now-3y", "to": "now"}\n'
+    "Never call platform_core_search without time_range — it will fail with a "
+    "validation error.\n\n"
     "Structure your response in exactly these four sections:\n\n"
     "## AGREED FACTS\n"
     "Bullet points of claims confirmed by multiple sources.\n\n"
@@ -264,7 +267,19 @@ def analyze():
         return await _agent.ainvoke({"messages": [{"role": "user", "content": query}]})
 
     t_start = time.time()
-    result = asyncio.run_coroutine_threadsafe(_run(), _loop).result(timeout=180)
+    try:
+        result = asyncio.run_coroutine_threadsafe(_run(), _loop).result(timeout=180)
+    except Exception as exc:
+        elapsed = round(time.time() - t_start, 2)
+        print(f"Agent error: {exc}")
+        err_resp = {
+            "error": "Agent failed to complete — the search tool returned a validation error. Try rephrasing your query.",
+            "detail": str(exc),
+            "execution_time_seconds": elapsed,
+        }
+        if want_debug:
+            err_resp["debug"] = debug_info
+        return jsonify(err_resp), 500
     elapsed = round(time.time() - t_start, 2)
 
     content = result["messages"][-1].content
