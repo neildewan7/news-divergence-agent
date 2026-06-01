@@ -15,10 +15,20 @@ GDELT_BASE = "https://api.gdeltproject.org/api/v2/doc/doc"
 GDELT_HEADERS = {"User-Agent": "news-divergence-agent/1.0"}
 GDELT_SLEEP = 15  # minimum seconds between consecutive API calls
 
-_WIRE = {"reuters.com", "apnews.com", "afp.com"}
-_INTERNATIONAL = {"bbc.com", "bbc.co.uk", "aljazeera.com", "theguardian.com", "nytimes.com"}
-_LOCAL = {"libyaherald.com", "libyanexpress.com", "marsad.ly", "libyaobserver.ly"}
-_NGO = {"icrc.org", "msf.org", "unocha.org", "reliefweb.int"}
+_WIRE = {
+    "reuters.com", "apnews.com", "afp.com",
+    "rfi.fr", "france24.com", "africanews.com", "thepeninsulaqatar.com",
+}
+_INTERNATIONAL = {
+    "bbc.com", "bbc.co.uk", "aljazeera.com", "theguardian.com", "nytimes.com",
+    "english.aawsat.com", "globalsecurity.org",
+}
+_LOCAL = {
+    "libyaherald.com", "libyanexpress.com", "marsad.ly", "libyaobserver.ly",
+    "skai.gr", "hurriyetdailynews.com", "lancashiretelegraph.co.uk",
+}
+_NGO = {"icrc.org", "msf.org", "unocha.org", "reliefweb.int", "amnesty.org"}
+_GOVERNMENT = {"unsmil.unmissions.org", "un.org"}
 
 
 def classify_source(domain: str) -> str:
@@ -31,7 +41,7 @@ def classify_source(domain: str) -> str:
         return "local_press"
     if d in _NGO:
         return "ngo"
-    if ".gov" in d:
+    if d in _GOVERNMENT or ".gov" in d:
         return "government"
     return "unknown"
 
