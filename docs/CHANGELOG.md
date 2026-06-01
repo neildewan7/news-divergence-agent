@@ -107,9 +107,46 @@
 - `word1 AND word2 AND word3` syntax returns full 50-article pages reliably
 
 ### Open
-- Cloud Run redeployment with updated code (GDELT pipeline + new system prompt)
+- ~~Cloud Run redeployment with updated code~~ — done Day 4
 - Frontend (weakest judging criterion)
 - Arabic-language articles not yet appearing — GDELT coverage for Arabic may need
   a separate query (e.g. `درنة AND فيضان`) or language filter
+- Demo video
+- Devpost submission
+
+## 2026-05-31 — Day 4 (Neil)
+
+### Progress
+- Cloud Run redeployed with full Day 3 codebase (GDELT pipeline, new SYSTEM_PROMPT,
+  `extract_query_params`). Build succeeded in ~2m; service revision
+  `news-divergence-agent-00001-9wk` live at
+  https://news-divergence-agent-314861703491.us-central1.run.app
+- Live smoke test passed: 4-section structured response returned in 19.9s.
+  `sources_indexed: 0` — correct, all 40 Libya/Derna articles already in index
+  from Day 3 local run (SHA256 dedup working as intended).
+- Elastic index audit: 40 docs with `event_id: libya-derna-2023-09`, 0 Kabul
+  docs remaining. Mapping uses dynamic text+keyword subfields (not the explicit
+  keyword mapping in index_test_data.py) — queries must use `field.keyword`
+  for term/agg operations, not bare field name.
+- GDELT API rate-limited from local IP during pre-warm attempt; index already
+  sufficient for demo with 40 real articles from Day 3.
+
+## 2026-06-01 — Day 5 (Neil)
+
+### Progress
+- Expanded `classify_source()` domain lists in `scripts/gdelt_pipeline.py`:
+  - wire: added `rfi.fr`, `france24.com`, `africanews.com`, `thepeninsulaqatar.com`
+  - international: added `english.aawsat.com`, `globalsecurity.org`
+  - local_press: added `skai.gr`, `hurriyetdailynews.com`, `lancashiretelegraph.co.uk`
+  - ngo: added `amnesty.org`
+  - government: added explicit `_GOVERNMENT` set (`unsmil.unmissions.org`, `un.org`)
+    alongside existing `.gov` catch-all
+  Previously ~80% of indexed articles from the Libya/Derna GDELT pull were
+  classified as "unknown"; after this fix the SOURCE BREAKDOWN section in agent
+  responses will show correct type labels for all major sources found.
+
+### Open
+- Frontend (weakest judging criterion)
+- Arabic-language GDELT coverage for Derna
 - Demo video
 - Devpost submission
