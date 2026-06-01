@@ -11,12 +11,14 @@ warnings.filterwarnings("ignore", message="Key '.*' is not supported in schema")
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify, render_template
+from elasticsearch import Elasticsearch
+import requests as _requests
 from langchain_google_vertexai import ChatVertexAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.prebuilt import create_react_agent
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
-from gdelt_pipeline import populate_index_for_query
+from gdelt_pipeline import populate_index_for_query, search_gdelt, index_articles
 
 load_dotenv()
 
@@ -84,6 +86,61 @@ _extract_llm = ChatVertexAI(
 
 app = Flask(__name__)
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _es_client() -> Elasticsearch:
+    return Elasticsearch(
+        os.getenv("ELASTICSEARCH_ENDPOINT"),
+        api_key=os.getenv("ELASTICSEARCH_API_KEY"),
+    )
+
+
+def _es_count(index: str = "news-articles") -> int:
+    try:
+        return _es_client().count(index=index)["count"]
+    except Exception as exc:
+        print(f"ES count error: {exc}")
+        return -1
+
+
+def _es_sample(index: str = "news-articles", size: int = 5) -> list:
+    try:
+        resp = _es_client().search(
+            index=index,
+            body={
+                "query": {"match_all": {}},
+                "_source": ["title", "source", "source_type", "published_date", "language"],
+                "size": size,
+                "sort": [{"published_date": {"order": "desc", "unmapped_type": "date"}}],
+            },
+        )
+        return [h["_source"] for h in resp["hits"]["hits"]]
+    except Exception as exc:
+        return [{"error": str(exc)}]
+
+
+def _gdelt_status() -> str:
+    """Returns 'ok' or 'rate_limited' by making a single minimal GDELT probe request."""
+    try:
+        r = _requests.get(
+            "https://api.gdeltproject.org/api/v2/doc/doc",
+            params={
+                "query": "Derna AND Libya",
+                "startdatetime": "20230910000000",
+                "enddatetime": "20230911000000",
+                "maxrecords": 1,
+                "mode": "artlist",
+                "format": "json",
+            },
+            headers={"User-Agent": "news-divergence-agent/1.0"},
+            timeout=10,
+        )
+        return "rate_limited" if r.status_code == 429 else "ok"
+    except Exception as exc:
+        return f"error: {exc}"
+
 
 def extract_query_params(user_query: str) -> dict:
     """
@@ -109,7 +166,6 @@ def extract_query_params(user_query: str) -> dict:
     try:
         response = _extract_llm.invoke(prompt)
         text = response.content if hasattr(response, "content") else str(response)
-        # Extract the first JSON object from the response
         match = re.search(r'\{[^{}]+\}', text, re.DOTALL)
         if match:
             parsed = json.loads(match.group())
@@ -124,6 +180,10 @@ def extract_query_params(user_query: str) -> dict:
     return fallback
 
 
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -134,29 +194,71 @@ def health():
     return jsonify({"status": "ok"})
 
 
+@app.route("/debug")
+def debug():
+    return jsonify({
+        "index": {
+            "total_docs": _es_count(),
+            "sample_docs": _es_sample(),
+        },
+        "gdelt_status": _gdelt_status(),
+        "system_prompt": SYSTEM_PROMPT,
+    })
+
+
 @app.route("/analyze", methods=["POST"])
 def analyze():
     data = request.get_json(force=True, silent=True) or {}
     query = data.get("query", "").strip()
+    want_debug = request.args.get("debug", "").lower() == "true"
+
     if not query:
         return jsonify({"error": "query is required"}), 400
 
-    # Extract GDELT search parameters from the user query
     params = extract_query_params(query)
     keywords = params["keywords"]
     start_date = params["start_date"]
     end_date = params["end_date"]
 
-    # Index fresh articles from GDELT before running the agent
-    try:
-        newly_indexed = populate_index_for_query(
-            keywords,
-            start_date=start_date,
-            end_date=end_date,
-        )
-    except Exception as exc:
-        print(f"GDELT pipeline error (non-fatal): {exc}")
-        newly_indexed = 0
+    if want_debug:
+        docs_before = _es_count()
+
+        try:
+            gdelt_df = search_gdelt(keywords, start_date, end_date)
+            gdelt_found = len(gdelt_df)
+            # Only probe GDELT for rate limit if we got 0 results — avoids extra
+            # request when the pipeline already returned articles.
+            if gdelt_found == 0:
+                gdelt_rate_limited = (_gdelt_status() == "rate_limited")
+            else:
+                gdelt_rate_limited = False
+            newly_indexed = index_articles(gdelt_df)
+        except Exception as exc:
+            print(f"GDELT pipeline error (non-fatal): {exc}")
+            gdelt_found = 0
+            gdelt_rate_limited = True
+            newly_indexed = 0
+
+        docs_after = _es_count()
+
+        debug_info = {
+            "gdelt_articles_found": gdelt_found,
+            "gdelt_articles_indexed": newly_indexed,
+            "gdelt_rate_limited": gdelt_rate_limited,
+            "articles_in_index_before": docs_before,
+            "articles_in_index_after": docs_after,
+        }
+    else:
+        try:
+            newly_indexed = populate_index_for_query(
+                keywords,
+                start_date=start_date,
+                end_date=end_date,
+            )
+        except Exception as exc:
+            print(f"GDELT pipeline error (non-fatal): {exc}")
+            newly_indexed = 0
+        debug_info = None
 
     async def _run():
         return await _agent.ainvoke({"messages": [{"role": "user", "content": query}]})
@@ -174,11 +276,15 @@ def analyze():
     else:
         response_text = content
 
-    return jsonify({
+    resp = {
         "response": response_text,
         "sources_indexed": newly_indexed,
         "execution_time_seconds": elapsed,
-    })
+    }
+    if want_debug:
+        resp["debug"] = debug_info
+
+    return jsonify(resp)
 
 
 if __name__ == "__main__":
