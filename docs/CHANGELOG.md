@@ -63,8 +63,7 @@
 ### Decisions
 - **Demo case pivoted**: Kabul market explosion → Libya/Derna floods, September 2023
   (Storm Daniel, two dam collapses, 10–11 Sep 2023). Rationale: better multilingual
-  GDELT coverage, richer casualty-count divergence across wire/NGO/government sources,
-  stronger humanitarian framing.
+  GDELT coverage, richer casualty-count divergence across wire/NGO/government sources, stronger humanitarian framing.
 - **GDELT as live corpus source**: queries GDELT Doc 2.0 API at request time and indexes
   fresh articles before each agent run. Replaces hand-curated corpus.
 - **Do NOT use gdeltdoc Filters for keyword queries**: the library wraps multi-word
@@ -145,8 +144,27 @@
   classified as "unknown"; after this fix the SOURCE BREAKDOWN section in agent
   responses will show correct type labels for all major sources found.
 
+## 2026-06-01 — Day 5 continued (Clara)
+
+### Progress
+- Flask `/` route added to `src/app.py` — serves the frontend via `render_template`.
+- `src/templates/` directory created; Flask template lookup confirmed working when
+  running `python src/app.py`.
+- `src/templates/index.html` (new) — initial frontend attempt: dark theme, header bar, sidebar, metrics strip, two-column layout (source reports + divergence map / SITREP tabs). Visual reference: Figma "Build Divergence Dashboard" export in repo root.
+  Status: **work in progress — design not yet satisfactory.**
+- Fixed 500 error on `/analyze`: Gemini was calling `platform_core_search` without
+  the required `time_range.from` field, triggering MCP error -32602. Fix: added
+  explicit instruction to SYSTEM_PROMPT — "always include time_range when calling
+  platform_core_search, set from to 'now-3y' and to to 'now'".
+
+### Decisions
+- Frontend served directly from Flask (no separate React dev server or build step)
+  so it works identically locally and on Cloud Run without config changes.
+- Frontend calls `/analyze` via relative URL — no CORS headers needed (same origin).
+
 ### Open
-- Frontend (weakest judging criterion)
+- Frontend design needs significant revision (current version not satisfactory)
 - Arabic-language GDELT coverage for Derna
+- Cloud Run redeployment with current codebase (frontend + SYSTEM_PROMPT fix)
 - Demo video
 - Devpost submission

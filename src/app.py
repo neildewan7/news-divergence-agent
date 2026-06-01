@@ -10,7 +10,7 @@ warnings.filterwarnings("ignore", message="Key '.*' is not supported in schema")
 
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from langchain_google_vertexai import ChatVertexAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.prebuilt import create_react_agent
@@ -26,7 +26,9 @@ SYSTEM_PROMPT = (
     "You are a humanitarian news analysis assistant helping researchers understand "
     "how the same disaster or conflict event is reported across different sources.\n\n"
     "When given a query, use the platform_core_search tool to search the news-articles "
-    "Elasticsearch index.\n\n"
+    "Elasticsearch index. IMPORTANT: always include time_range when calling "
+    "platform_core_search — set from to 'now-3y' and to to 'now' unless the user "
+    "specifies a different period. Never call the tool without time_range.\n\n"
     "Structure your response in exactly these four sections:\n\n"
     "## AGREED FACTS\n"
     "Bullet points of claims confirmed by multiple sources.\n\n"
@@ -120,6 +122,11 @@ def extract_query_params(user_query: str) -> dict:
         print(f"extract_query_params failed: {exc}")
 
     return fallback
+
+
+@app.route("/")
+def index():
+    return render_template("index.html")
 
 
 @app.route("/health")
