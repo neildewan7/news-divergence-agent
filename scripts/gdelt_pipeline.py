@@ -346,6 +346,53 @@ def index_articles(
     return indexed
 
 
+# Term synonyms for English synonym-expansion pass
+_SYNONYMS = {
+    "flood":     ["flooding", "inundation"],
+    "floods":    ["flooding", "inundation"],
+    "earthquake": ["quake", "tremor"],
+    "explosion": ["blast", "bombing"],
+    "conflict":  ["clashes", "fighting"],
+    "disaster":  ["catastrophe", "emergency"],
+    "attack":    ["assault", "strike"],
+    "crisis":    ["emergency", "catastrophe"],
+}
+
+
+def _synonym_query(query: str):
+    """Return a synonym-variant query string, or None if no known synonyms present."""
+    words = [w for w in query.split() if w.upper() != "AND"]
+    alt_words = []
+    found = False
+    for w in words:
+        syns = _SYNONYMS.get(w.lower())
+        if syns:
+            alt_words.append(syns[0])
+            found = True
+        else:
+            alt_words.append(w)
+    return " AND ".join(alt_words) if found else None
+
+
+def _df_language_counts(df: pd.DataFrame) -> dict:
+    if df.empty or "language" not in df.columns:
+        return {}
+    return {
+        map_language(lang): int(count)
+        for lang, count in df["language"].value_counts().items()
+    }
+
+
+def _df_source_type_counts(df: pd.DataFrame) -> dict:
+    if df.empty or "domain" not in df.columns:
+        return {}
+    counts: dict = {}
+    for domain in df["domain"].dropna():
+        st = classify_source(str(domain).lower().lstrip("www."))
+        counts[st] = counts.get(st, 0) + 1
+    return counts
+
+
 def populate_index_for_query(
     query: str,
     start_date: str = None,
@@ -354,7 +401,13 @@ def populate_index_for_query(
 ) -> int:
     """
     Full pipeline: GDELT search → text fetch → Elastic index.
-    Passes end_date as max_date to index_articles to reject future-recrawled articles.
+
+    Runs multiple passes:
+      Pass 1: English, primary keywords
+      Pass 2: English, synonym variants (if any synonyms found)
+      Pass 3-5: French, Arabic, Greek with primary keywords
+
+    Passes end_date as max_date to reject future-recrawled articles.
     Returns count of newly indexed articles.
     """
     t_start = time.time()
@@ -367,19 +420,44 @@ def populate_index_for_query(
     if event_id is None:
         event_id = f"query-{start_date[:8]}-{end_date[:8]}"
 
-    newly_indexed = 0
+    total_found = 0
+    total_indexed = 0
+    by_language: dict = {}
+    by_source_type: dict = {}
 
-    df_en = search_gdelt(query, start_date, end_date)
-    newly_indexed += index_articles(df_en, max_date=end_date, event_id=event_id)
+    def _run_pass(q: str, label: str, max_results: int = 50):
+        nonlocal total_found, total_indexed
+        df = search_gdelt(q, start_date, end_date, max_results=max_results)
+        if df.empty:
+            return
+        total_found += len(df)
+        for lang, cnt in _df_language_counts(df).items():
+            by_language[lang] = by_language.get(lang, 0) + cnt
+        for st, cnt in _df_source_type_counts(df).items():
+            by_source_type[st] = by_source_type.get(st, 0) + cnt
+        n = index_articles(df, max_date=end_date, event_id=event_id)
+        total_indexed += n
+        print(f"  Pass '{label}': found {len(df)}, indexed {n}")
 
+    # Pass 1: English primary keywords
+    _run_pass(query, "en-primary")
+
+    # Pass 2: English synonym expansion
+    syn_q = _synonym_query(query)
+    if syn_q and syn_q != query:
+        print(f"Synonym pass: {syn_q}")
+        time.sleep(GDELT_SLEEP)
+        _run_pass(syn_q, "en-synonyms")
+
+    # Passes 3-5: Language-specific
     for lang_iso in EXTRA_LANGUAGES:
         lang_name = GDELT_LANGUAGE_NAMES[lang_iso]
         lang_query = f"{query} sourcelang:{lang_name}"
         print(f"Fetching {lang_name} articles...")
         time.sleep(GDELT_SLEEP)
-        df_lang = search_gdelt(lang_query, start_date, end_date, max_results=25)
-        newly_indexed += index_articles(df_lang, max_date=end_date, event_id=event_id)
+        _run_pass(lang_query, f"{lang_iso}-primary", max_results=25)
 
     elapsed = round(time.time() - t_start, 1)
-    print(f"Pipeline total runtime: {elapsed}s")
-    return newly_indexed
+    print(f"Pipeline total: found={total_found}, indexed={total_indexed}, "
+          f"by_lang={by_language}, by_type={by_source_type}, runtime={elapsed}s")
+    return total_indexed
