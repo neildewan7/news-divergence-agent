@@ -37,11 +37,12 @@ SYSTEM_PROMPT = (
     "Always flag casualty count conflicts explicitly.\n\n"
     "## SOURCE BREAKDOWN\n"
     "One line per source, pipe-delimited, exactly this format:\n"
-    "- NAME | TYPE | LANG | DATE | One sentence on their framing angle\n"
+    "- NAME | TYPE | LANG | DATE | URL | One sentence on their framing angle\n"
     "TYPE must be one of: wire, ngo, government, local_press, international, unknown\n"
     "LANG must be ISO 639-1 code (en, ar, fr, da, ps, el, es, etc.)\n"
     "DATE must be the article publish date as YYYY-MM-DD, or 'unknown'\n"
-    "Example: - Reuters | wire | en | 2023-09-13 | Focused on official death toll of 3800.\n\n"
+    "URL must be the full article URL from the search results, or 'unknown'\n"
+    "Example: - Reuters | wire | en | 2023-09-13 | https://reuters.com/article/xyz | Focused on official death toll of 3800.\n\n"
     "## CLAIM MATRIX\n"
     "One line per disputed claim, pipe-delimited, exactly this format:\n"
     "CLAIM | SOURCE:VALUE:STATUS | SOURCE:VALUE:STATUS | ...\n"
@@ -86,6 +87,8 @@ async def main():
     t_start = time.time()
     result = await agent.ainvoke({"messages": [{"role": "user", "content": query}]})
     elapsed = time.time() - t_start
+
+    
 
     # Debug: walk every message in the agent's internal trace
     if DEBUG:

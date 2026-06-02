@@ -123,6 +123,8 @@
     .src-name{color:var(--text);font-size:13px;font-weight:500}
     .src-date{color:var(--text3);font-size:11px;flex-shrink:0;font-family:'JetBrains Mono',monospace}
     .src-text{color:var(--text2);font-size:13px;line-height:1.55}
+    .src-link{display:inline-block;margin-top:6px;font-size:11px;color:var(--green);text-decoration:none;opacity:.75}
+    .src-link:hover{opacity:1;text-decoration:underline}
     .src-text .num{color:var(--amber);background:rgba(239,159,39,.12);padding:0 3px;border-radius:2px;font-family:'JetBrains Mono',monospace;font-size:12.5px}
     /* translate toggle */
     .translate-row{margin-top:8px}
@@ -427,12 +429,16 @@ function parseSources(secText) {
   return lines.map(line => {
     const raw = line.replace(/^\s*[-*]\s*/, '');
     const parts = raw.split('|').map(p => p.trim());
+    // Format: NAME | TYPE | LANG | DATE | URL | Note
+    // Detect whether parts[4] is a URL or the note (backwards-compat)
+    const hasUrl = parts[4] && /^https?:\/\//i.test(parts[4]);
     return {
       name:  parts[0] || '—',
       type:  (parts[1] || 'unknown').toLowerCase().replace(/\s+/g,'_'),
       lang:  (parts[2] || 'en').toLowerCase().replace(/\s+/g,''),
       date:  parts[3] || '',
-      note:  parts[4] || parts[3] || '',   // fallback if date absent
+      url:   hasUrl ? parts[4] : (parts[4] !== 'unknown' && /^https?:\/\//i.test(parts[4]) ? parts[4] : ''),
+      note:  hasUrl ? (parts[5] || '') : (parts[4] || parts[3] || ''),
       isConflict: false,
     };
   });
@@ -531,6 +537,11 @@ function buildDateRange(sources) {
 // RENDERING
 // ═══════════════════════════════════════════════════════════
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function mdInline(s) {
+  return esc(s)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*\n]+?)\*/g, '<em>$1</em>');
+}
 
 function langLabel(l) {
   const m = { en:'EN', ar:'AR', fa:'FA', da:'DA', ps:'PS', fr:'FR', el:'GR', gr:'GR', es:'ES', de:'DE', pt:'PT', ru:'RU', zh:'ZH', tr:'TR' };
@@ -560,6 +571,7 @@ function renderSourceCards() {
         <span class="src-date">${esc(s.date && s.date !== 'unknown' ? s.date : '')}</span>
       </div>
       <p class="src-text">${hlNums(s.note)}</p>
+      ${s.url ? `<a class="src-link" href="${esc(s.url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">↗ View article</a>` : ''}
       ${isNonEn ? `
       <div class="translate-row">
         <button class="translate-btn" onclick="toggleOriginal(this)">
@@ -600,10 +612,10 @@ function renderSitrep() {
   document.getElementById('sitrep-ts').textContent = 'Generated ' + new Date().toUTCString().replace(' GMT','') + ' UTC';
   // confirmed = AGREED FACTS as a bullet list
   const agreedLines = state.agreed.split('\n').map(l => l.replace(/^[-*•]\s*/,'')).filter(l => l.trim());
-  document.getElementById('sr-confirmed').innerHTML = `<ul>${agreedLines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>`;
+  document.getElementById('sr-confirmed').innerHTML = `<ul>${agreedLines.map(l => `<li>${mdInline(l)}</li>`).join('')}</ul>`;
   // disputed = DIVERGENCE bullets
   const divLines = state.divergence.split('\n').map(l => l.replace(/^[-*•]\s*/,'')).filter(l => l.trim());
-  document.getElementById('sr-disputed').innerHTML = `<ul>${divLines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>`;
+  document.getElementById('sr-disputed').innerHTML = `<ul>${divLines.map(l => `<li>${mdInline(l)}</li>`).join('')}</ul>`;
   // summary = first paragraph of AGREED FACTS
   document.getElementById('sr-summary').textContent = agreedLines.slice(0, 2).join(' ') || 'Analysis complete.';
   // sources
