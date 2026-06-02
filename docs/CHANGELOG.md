@@ -218,7 +218,88 @@
 - Total: ~30s vs ~90s before
 
 ### Open
-- Cloud Run redeployment with Day 6 code
-- Arabic GDELT coverage (requires native-script query or `sourcelang:Arabic` pass)
+- ~~Cloud Run redeployment~~ — done Day 7
+- ~~Arabic GDELT coverage~~ — sourcelang:Arabic pass added Day 7
+- Demo video
+- Devpost submission
+
+## 2026-06-02 — Day 7 (Neil)
+
+### Audit findings (pre-implementation)
+- CLAIM MATRIX section in prompt was generating `:VALUE:STATUS` header literals
+  and zero usable rows — known broken since Day 6 but never removed from app.py
+- `map_language("Greek")` returned `"gr"` (wrong) instead of `"el"` (ISO 639-1)
+  via the `[:2].lower()` fallback
+- `event_id` hardcoded to `"libya-derna-2023-09"` for ALL articles regardless of
+  query — Gaza articles got Libya's event_id
+- Future-dated articles contaminating corpus: GDELT `seendate` is the recrawl time,
+  not publication time; 2023 articles recrawled in 2026 got `published_date: 2026-*`
+- `extract_query_params` regex `{[^{}]+}` failed on markdown-wrapped JSON responses
+- ~60% of indexed articles had `source_type: unknown` because classify_source()
+  was missing major outlets (aa.com.tr, cnn.com, dw.com, foxnews.com, hrw.org, etc.)
+- No materiality threshold for divergence — rounding differences flagged identically
+  to 3x casualty count discrepancies
+- No wire-story deduplication instruction — 6 outlets reprinting AFP counted as 6 sources
+
+### Group 1: Critical bug fixes
+- `temperature=0.1` added to both `ChatVertexAI` instances in `src/app.py` (main
+  agent LLM and `_extract_llm`) to reduce non-determinism across runs
+- `index_articles()` gains `max_date` and `event_id` parameters; `populate_index_for_query()`
+  passes `end_date` as `max_date` — future-recrawled articles rejected at index time
+- `event_id` is now derived from query date range instead of hardcoded
+- `classify_source()` expanded with 20+ domains: wire (aa.com.tr, xinhuanet.com,
+  tass.com, anadoluagency.com), international (cnn.com, dw.com, foxnews.com,
+  artnews.com, washingtonpost.com, middleeasteye.net, the-star.co.ke),
+  local_press (tolonews.com, pajhwok.com, ariananews.com, protothema.gr),
+  ngo (hrw.org, acleddata.com), government (state.gov, fco.gov.uk)
+- Added `opinion` source type: mondaq.com, antiwar.com, algemeiner.com, etc.
+- Fixed `map_language()`: Greek `"gr"` → `"el"`, added de/es/pt/ru/tr
+- Re-ran `backfill_source_types.py`: 23/234 docs updated (wire +3, international +14,
+  local_press +6, opinion +4)
+
+### Group 2: Multilingual query expansion
+- `populate_index_for_query()` now runs up to 5 GDELT passes:
+  1. English primary keywords
+  2. English synonym variants (`_synonym_query`: flood→flooding, earthquake→quake, etc.)
+  3. French, 4. Arabic, 5. Greek with `sourcelang:` filter
+- Added `_synonym_query()`, `_df_language_counts()`, `_df_source_type_counts()` helpers
+- Pipeline logs per-pass stats and total found/indexed/by-language/by-source-type
+
+### Group 3: System prompt overhaul
+- Reduced to **FOUR sections**: AGREED FACTS / DIVERGENCE / SOURCE BREAKDOWN /
+  CONFIDENCE SUMMARY. CLAIM MATRIX removed entirely.
+- SOURCE NAMING RULES block added: every name must come from metadata; never invent
+  or write "Unknown Source"; use domain if no display name
+- Wire-story deduplication instruction: same domain + date + near-identical figures
+  = ONE source; note reprinting in SOURCE BREAKDOWN
+- DIVERGENCE materiality threshold: only flag when numbers differ >5% or assertions
+  directly contradict. "No material divergences identified" is valid.
+- DIVERGENCE now uses `**[TOPIC]** / bullet / Significance:` structured format
+- `opinion` sources listed in SOURCE BREAKDOWN but excluded from anchoring AGREED FACTS
+- Synced `src/agent.py` SYSTEM_PROMPT to match
+
+### Group 4: Self-directed improvements
+- `extract_query_params()`: strips markdown code fences, uses `rfind/find` for
+  outermost JSON (handles nesting), validates dates with `\d{14}` fullmatch, includes
+  today's date in prompt for accurate relative date generation
+- Enriched agent query: extracts clean event keywords from GDELT params, passes
+  these + original query + date range to agent — reduces date-noise dilution in
+  Elastic semantic search vector
+- Debug path now includes `relevant_docs_for_query` in response
+
+### Group 5: Validation (two runs, same query)
+- Both runs: all 4 sections present, no "Unknown Source", `sources_indexed: 0`,
+  10 named real sources per run
+- Divergence counts: Run 1 = 2, Run 2 = 3 (diff of 1, within ≤2 threshold)
+- Infrastructure damage divergence was present in both but only flagged by Run 2 —
+  legitimate marginal case given materiality threshold, not fabrication
+- Agent execution time: 44s / 42s (consistent)
+- Source type `aa.com.tr` still shows as "international" in agent output — agent
+  infers type from knowledge rather than reading `source_type` field from index;
+  the indexed field is now correctly set to "wire" after backfill
+
+### Open
+- Cloud Run redeployment with Day 7 code
+- Agent to read `source_type` from index metadata instead of inferring
 - Demo video
 - Devpost submission
