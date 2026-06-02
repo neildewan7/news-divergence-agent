@@ -222,3 +222,15 @@
 - Arabic GDELT coverage (requires native-script query or `sourcelang:Arabic` pass)
 - Demo video
 - Devpost submission
+
+## 2026-06-02 — Day 6 continued (Clara)
+
+### Progress
+- `scripts/gdelt_pipeline.py`: `index_articles()` now accepts an `end_date`
+  parameter and skips any article whose `published_date` falls after it.
+  Prevents future-dated recrawled articles from corrupting the corpus.
+  `populate_index_for_query()` passes `end_date` through on both the English
+  and multilingual indexing calls.
+- `src/app.py`: added `temperature=0.1` to both `ChatVertexAI` instances (the
+  main agent LLM and `_extract_llm`). Lower temperature reduces non-determinism
+  so divergence counts are more consistent across runs.

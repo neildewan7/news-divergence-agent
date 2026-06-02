@@ -81,6 +81,7 @@ async def _build_agent():
         model="gemini-2.5-flash",
         project="news-divergence-project",
         location="us-central1",
+        temperature=0.1,
     )
     return create_react_agent(llm, tools, prompt=SYSTEM_PROMPT)
 
@@ -93,6 +94,7 @@ _extract_llm = ChatVertexAI(
     model="gemini-2.5-flash",
     project="news-divergence-project",
     location="us-central1",
+    temperature=0.1,
 )
 
 app = Flask(__name__)

@@ -193,13 +193,22 @@ def search_gdelt(query: str, start_date: str, end_date: str, max_results: int = 
     return df
 
 
-def index_articles(articles_df: pd.DataFrame, index_name: str = "news-articles") -> int:
+def index_articles(
+    articles_df: pd.DataFrame,
+    index_name: str = "news-articles",
+    end_date: str = None,
+) -> int:
     """
     Fetch full text and index articles into Elasticsearch.
     Returns count of newly indexed documents.
     """
     if len(articles_df) == 0:
         return 0
+
+    end_date_cutoff = None
+    if end_date:
+        norm = _normalize_date(end_date)
+        end_date_cutoff = f"{norm[0:4]}-{norm[4:6]}-{norm[6:8]}"
 
     es = Elasticsearch(
         os.getenv("ELASTICSEARCH_ENDPOINT"),
@@ -258,6 +267,9 @@ def index_articles(articles_df: pd.DataFrame, index_name: str = "news-articles")
         except Exception:
             published_date = seendate[:10] if len(seendate) >= 10 else ""
 
+        if end_date_cutoff and published_date and published_date > end_date_cutoff:
+            continue
+
         domain = getattr(row, "domain", "") or ""
         language_raw = getattr(row, "language", "") or ""
         lang_iso = map_language(language_raw)
@@ -312,7 +324,7 @@ def populate_index_for_query(
     newly_indexed = 0
 
     df_en = search_gdelt(query, start_date, end_date)
-    newly_indexed += index_articles(df_en)
+    newly_indexed += index_articles(df_en, end_date=end_date)
 
     for lang_iso in EXTRA_LANGUAGES:
         lang_name = GDELT_LANGUAGE_NAMES[lang_iso]
@@ -320,7 +332,7 @@ def populate_index_for_query(
         print(f"Fetching {lang_name} articles...")
         time.sleep(GDELT_SLEEP)
         df_lang = search_gdelt(lang_query, start_date, end_date, max_results=25)
-        newly_indexed += index_articles(df_lang)
+        newly_indexed += index_articles(df_lang, end_date=end_date)
 
     elapsed = round(time.time() - t_start, 1)
     print(f"Pipeline total runtime: {elapsed}s")
