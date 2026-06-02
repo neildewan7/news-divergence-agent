@@ -259,15 +259,20 @@ def analyze():
             "articles_in_index_after": docs_after,
         }
     else:
-        try:
-            newly_indexed = populate_index_for_query(
-                keywords,
-                start_date=start_date,
-                end_date=end_date,
-            )
-        except Exception as exc:
-            print(f"GDELT pipeline error (non-fatal): {exc}")
+        current_count = _es_count()
+        if current_count >= 50:
+            print(f"Index has {current_count} docs — skipping GDELT pipeline.")
             newly_indexed = 0
+        else:
+            try:
+                newly_indexed = populate_index_for_query(
+                    keywords,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+            except Exception as exc:
+                print(f"GDELT pipeline error (non-fatal): {exc}")
+                newly_indexed = 0
         debug_info = None
 
     async def _run():

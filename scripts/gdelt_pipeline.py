@@ -15,7 +15,7 @@ load_dotenv()
 
 GDELT_BASE = "https://api.gdeltproject.org/api/v2/doc/doc"
 GDELT_HEADERS = {"User-Agent": "news-divergence-agent/1.0"}
-GDELT_SLEEP = 15  # minimum seconds between consecutive API calls
+GDELT_SLEEP = 5  # minimum seconds between consecutive API calls
 
 GCP_PROJECT = "news-divergence-project"
 
