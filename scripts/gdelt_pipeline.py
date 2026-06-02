@@ -99,12 +99,13 @@ def map_language(gdelt_language: str) -> str:
     return gdelt_language[:2].lower() if gdelt_language else "xx"
 
 
+_FETCH_HEADERS = {"User-Agent": "news-divergence-agent/1.0"}
+
 def fetch_article_text(url: str):
     try:
-        downloaded = trafilatura.fetch_url(url, no_ssl=False)
-        if downloaded is None:
-            return None
-        text = trafilatura.extract(downloaded, include_comments=False, include_tables=False)
+        resp = requests.get(url, timeout=5, headers=_FETCH_HEADERS)
+        resp.raise_for_status()
+        text = trafilatura.extract(resp.text, include_comments=False, include_tables=False)
         return text if text and len(text.strip()) > 50 else None
     except Exception:
         return None
@@ -227,7 +228,9 @@ def index_articles(articles_df: pd.DataFrame, index_name: str = "news-articles")
         existing_ids = set()
 
     skipped_dupes = len(existing_ids)
-    to_index = {doc_id: row for doc_id, row in id_map.items() if doc_id not in existing_ids}
+    to_index = dict(list(
+        {doc_id: row for doc_id, row in id_map.items() if doc_id not in existing_ids}.items()
+    )[:15])
 
     fetched = 0
     failed_fetch = 0
