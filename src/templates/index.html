@@ -145,18 +145,6 @@
     .badge.lang-fr{background:rgba(244,114,182,.15);color:#f9a8d4}
     .badge.lang-el,.badge.lang-gr{background:rgba(168,85,247,.15);color:#d8b4fe}
 
-    /* ── DIVERGENCE MAP ── */
-    .div-table-wrap{background:var(--bg-card);border:1px solid var(--border);border-radius:4px;overflow-x:auto;margin-bottom:16px}
-    .div-table{width:100%;border-collapse:collapse;font-size:12px}
-    .div-table th{padding:9px 12px;text-align:left;color:var(--text3);font-weight:500;border-bottom:1px solid var(--border)}
-    .div-table th.src-col{text-align:center;color:var(--text2)}
-    .div-table td{padding:8px 10px;border-bottom:1px solid var(--border2)}
-    .div-table tr:last-child td{border-bottom:none}
-    .div-table td.claim-cell{color:var(--text2);width:130px}
-    .div-table td.val-cell{text-align:center;font-family:'JetBrains Mono',monospace}
-    .div-table td.val-cell.agree{color:var(--green)}
-    .div-table td.val-cell.conflict{color:var(--amber);background:var(--amber-bg2)}
-    .div-table td.val-cell.empty{color:var(--text4)}
     /* coverage bars */
     .cov-list{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
     .cov-row{display:flex;align-items:center;gap:12px}
@@ -347,22 +335,8 @@
 
         <!-- Right: tabs -->
         <div class="col-r">
-          <div class="tabbar">
-            <button id="tab-map" class="tab active" type="button">Divergence map</button>
-            <button id="tab-sitrep" class="tab" type="button">SITREP draft</button>
-          </div>
-
-          <!-- Divergence map panel -->
-          <div id="panel-map">
-            <div class="sec-hdg">Divergence map</div>
-            <div class="div-table-wrap"><table class="div-table" id="div-table"><thead></thead><tbody></tbody></table></div>
-            <div class="sec-hdg">Claim coverage</div>
-            <div id="cov-list" class="cov-list"></div>
-            <div class="key-div"><div class="key-div-lbl">Key divergence</div><p id="key-div-text"></p></div>
-          </div>
-
           <!-- SITREP panel -->
-          <div id="panel-sitrep" class="hidden">
+          <div id="panel-sitrep">
             <div class="sitrep-head">
               <div><div class="sitrep-title">Situation report — draft</div><div id="sitrep-ts" class="sitrep-ts"></div></div>
               <div class="sitrep-acts">
@@ -621,61 +595,6 @@ function toggleOriginal(btn) {
   chev.style.transform = box.classList.contains('expanded') ? 'rotate(180deg)' : '';
 }
 
-function renderDivergenceTable() {
-  const tbl = document.getElementById('div-table');
-  const rows = state.claims;
-  if (!rows.length) {
-    tbl.closest('.div-table-wrap').innerHTML = `<div style="padding:16px;color:var(--text3);font-size:12px">No structured claim matrix in response. Try a query with more articles indexed.</div>`;
-    return;
-  }
-  // Collect all unique source names for columns
-  const srcSet = [];
-  rows.forEach(r => r.cells.forEach(c => { if (!srcSet.includes(c.source)) srcSet.push(c.source); }));
-
-  tbl.querySelector('thead').innerHTML = `<tr>
-    <th>Claim</th>
-    ${srcSet.map(s => `<th class="src-col">${esc(s)}</th>`).join('')}
-  </tr>`;
-
-  tbl.querySelector('tbody').innerHTML = rows.map((row, ri) => {
-    const cellMap = {};
-    row.cells.forEach(c => { cellMap[c.source] = c; });
-    return `<tr>
-      <td class="claim-cell">${esc(row.claim)}</td>
-      ${srcSet.map(s => {
-        const cell = cellMap[s];
-        if (!cell) return `<td class="val-cell empty">—</td>`;
-        const isTranslated = false; // we don't have lang per cell, but could derive
-        return `<td class="val-cell ${cell.status}">${esc(cell.value)}</td>`;
-      }).join('')}
-    </tr>`;
-  }).join('');
-}
-
-function renderCoverage() {
-  const el = document.getElementById('cov-list');
-  el.innerHTML = state.coverage.slice(0, 8).map(c => {
-    const pct = Math.round(c.fraction * 100);
-    const lbl = c.label.length > 80 ? c.label.slice(0, 80) + '…' : c.label;
-    return `<div class="cov-row">
-      <div class="cov-lbl" title="${esc(c.label)}">${esc(lbl)}</div>
-      <div class="cov-track"><div class="cov-fill ${c.consensus ? 'consensus' : 'disputed'}" style="width:0%" data-pct="${pct}"></div></div>
-      <div class="cov-pct">${pct}%</div>
-    </div>`;
-  }).join('') || '<div style="color:var(--text3);font-size:12px">No confidence data parsed.</div>';
-  // Animate bars after render
-  requestAnimationFrame(() => {
-    el.querySelectorAll('.cov-fill[data-pct]').forEach(f => {
-      f.style.width = f.dataset.pct + '%';
-    });
-  });
-}
-
-function renderKeyDivergence() {
-  // First bullet-list item of DIVERGENCE, or first sentence
-  const lines = state.divergence.split('\n').map(l => l.replace(/^[-*•]\s*/,'').trim()).filter(l => l.length > 10);
-  document.getElementById('key-div-text').textContent = lines.slice(0, 3).join(' ') || 'No divergence summary available.';
-}
 
 function renderSitrep() {
   document.getElementById('sitrep-ts').textContent = 'Generated ' + new Date().toUTCString().replace(' GMT','') + ' UTC';
@@ -842,10 +761,6 @@ function showView(view) {
 
 function switchTab(tab) {
   state.activeTab = tab;
-  document.getElementById('tab-map').classList.toggle('active', tab === 'map');
-  document.getElementById('tab-sitrep').classList.toggle('active', tab === 'sitrep');
-  document.getElementById('panel-map').classList.toggle('hidden', tab !== 'map');
-  document.getElementById('panel-sitrep').classList.toggle('hidden', tab !== 'sitrep');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -879,19 +794,17 @@ document.getElementById('qform').addEventListener('submit', async e => {
     state.agreed     = extractSection(text, 'AGREED FACTS');
     state.divergence = extractSection(text, 'DIVERGENCE');
     const srcSec     = extractSection(text, 'SOURCE BREAKDOWN');
-    const matrixSec  = extractSection(text, 'CLAIM MATRIX');
     state.confidence = extractSection(text, 'CONFIDENCE SUMMARY');
     state.execTime   = data.execution_time_seconds || 0;
     state.indexed    = data.sources_indexed || 0;
 
     state.sources  = parseSources(srcSec);
-    state.claims   = parseClaimMatrix(matrixSec);
-    state.coverage = parseCoverage(state.confidence);
-    annotateConflicts(state.sources, state.claims);
+    state.claims   = [];
+    state.coverage = [];
     state.timeline = buildTimeline(state.sources, state.claims);
 
     // Metrics
-    const divCount = state.claims.filter(r => r.cells.some(c => c.status === 'conflict')).length;
+    const divCount = state.divergence.split('\n').filter(l => /^\s*[-*•]/.test(l)).length;
     document.getElementById('m-sources').textContent   = state.sources.length || '—';
     document.getElementById('m-divergent').textContent = divCount || '—';
     document.getElementById('m-dates').textContent     = buildDateRange(state.sources);
@@ -899,9 +812,6 @@ document.getElementById('qform').addEventListener('submit', async e => {
 
     // Render everything
     renderSourceCards();
-    renderDivergenceTable();
-    renderCoverage();
-    renderKeyDivergence();
     renderSitrep();
 
     // Show UI
@@ -909,7 +819,6 @@ document.getElementById('qform').addEventListener('submit', async e => {
     document.getElementById('metrics').classList.remove('hidden');
     showView('analysis');
     document.getElementById('view-analysis').classList.remove('hidden');
-    switchTab('map');
     document.getElementById('sitrep-btn').disabled = false;
 
   } catch (err) {
@@ -926,8 +835,6 @@ function showErr(msg) {
 // ═══════════════════════════════════════════════════════════
 // EVENT LISTENERS
 // ═══════════════════════════════════════════════════════════
-document.getElementById('tab-map').addEventListener('click', () => switchTab('map'));
-document.getElementById('tab-sitrep').addEventListener('click', () => switchTab('sitrep'));
 document.getElementById('sitrep-btn').addEventListener('click', () => { switchTab('sitrep'); showView('analysis'); });
 document.getElementById('dp-close').addEventListener('click', closeDetail);
 document.getElementById('nav-analysis').addEventListener('click', () => showView('analysis'));
