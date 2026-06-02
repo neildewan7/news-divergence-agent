@@ -236,6 +236,46 @@
     /* ── FADE ANIM ── */
     @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
     .fade-up{animation:fadeUp .28s ease both}
+
+    /* ── DIVERGENCE MAP ── */
+    .dm-sec-lbl{color:var(--green);font-size:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:500;margin-bottom:16px}
+    .range-block{position:relative;padding:36px 4px 36px}
+    .range-track{height:6px;background:var(--border);border-radius:3px;position:relative;overflow:visible}
+    .range-dotset{position:absolute;top:50%;transform:translateY(-50%)}
+    .range-dotset-inner{display:flex;flex-direction:column;align-items:center;transform:translateX(-50%)}
+    .range-dotset-inner.below{flex-direction:column-reverse}
+    .range-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;cursor:default}
+    .range-dotlbl{font-family:'JetBrains Mono',monospace;font-size:12px;margin-bottom:5px;white-space:nowrap}
+    .range-dotset-inner.below .range-dotlbl{margin-bottom:0;margin-top:5px}
+    .range-tip{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);background:#1e2330;border:1px solid var(--border);border-radius:5px;padding:5px 9px;white-space:nowrap;font-size:11px;color:var(--text2);pointer-events:none;opacity:0;transition:opacity .15s;z-index:20;line-height:1.4}
+    .range-dotset:hover .range-tip{opacity:1}
+    .range-dotset-inner.below .range-tip{bottom:auto;top:calc(100% + 8px)}
+    .range-stat{font-size:11px;color:var(--text3);margin-top:4px}
+    .range-stat.all-agree{color:var(--green)}
+    .agreed-zone{background:var(--bg-card);border:0.5px solid rgba(29,158,117,0.25);border-left:3px solid var(--green);border-radius:4px;padding:12px 16px;margin-bottom:12px}
+    .disputed-zone{background:var(--bg-card);border:0.5px solid rgba(239,159,39,0.25);border-left:3px solid var(--amber);border-radius:4px;padding:12px 16px;margin-bottom:12px}
+    .zone-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.07em;font-weight:500;margin-bottom:8px}
+    .zone-lbl.green{color:var(--green)}
+    .zone-lbl.amber{color:var(--amber)}
+    .zone-row{display:flex;align-items:baseline;gap:8px;margin-bottom:5px}
+    .zone-check{color:var(--green);font-size:12px;flex-shrink:0;line-height:1.6}
+    .zone-text{color:var(--text2);font-size:13px;line-height:1.6}
+    .zone-empty{color:var(--text3);font-size:13px;font-style:italic}
+    .disp-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+    .disp-name{color:var(--text2);font-size:12px;font-weight:500;min-width:120px;flex-shrink:0}
+    .disp-sep{color:var(--text4);font-size:11px}
+    .val-pill{background:var(--amber-bg);color:var(--amber);border:0.5px solid var(--amber-br);border-radius:3px;font-size:11px;padding:2px 7px;font-family:'JetBrains Mono',monospace;white-space:nowrap}
+    .spc-card{background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:12px 14px;margin-bottom:8px}
+    .spc-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+    .spc-claim{color:var(--text);font-size:13px;font-weight:500}
+    .spc-badge{font-size:11px;font-weight:500;padding:2px 8px;border-radius:20px}
+    .spc-badge.conflict{background:var(--amber-bg);color:var(--amber)}
+    .spc-badge.agree{background:var(--green-bg);color:var(--green)}
+    .spc-src-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--border2)}
+    .spc-src-name{color:var(--text2);font-size:12px}
+    .spc-val{font-family:'JetBrains Mono',monospace;font-size:12px;margin-left:auto;padding-left:8px}
+    .spc-val.conflict{color:var(--amber)}
+    .spc-val.agree{color:var(--green)}
   </style>
 </head>
 <body>
@@ -337,8 +377,18 @@
 
         <!-- Right: tabs -->
         <div class="col-r">
+          <div class="tabbar">
+            <button id="tab-map" class="tab active" type="button">Divergence map</button>
+            <button id="tab-sitrep" class="tab" type="button">SITREP draft</button>
+          </div>
+          <!-- Divergence map panel -->
+          <div id="panel-map">
+            <div id="dm-range" style="margin-bottom:20px"></div>
+            <div id="dm-split"></div>
+            <div id="dm-spotlight"></div>
+          </div>
           <!-- SITREP panel -->
-          <div id="panel-sitrep">
+          <div id="panel-sitrep" class="hidden">
             <div class="sitrep-head">
               <div><div class="sitrep-title">Situation report — draft</div><div id="sitrep-ts" class="sitrep-ts"></div></div>
               <div class="sitrep-acts">
@@ -716,6 +766,184 @@ function closeDetail() {
 }
 
 // ═══════════════════════════════════════════════════════════
+// DIVERGENCE MAP
+// ═══════════════════════════════════════════════════════════
+function _extractNum(v) { const m = (v || '').replace(/,/g, '').match(/\d+/); return m ? parseInt(m[0], 10) : null; }
+function _isNumVal(v)   { return _extractNum(v) !== null; }
+function _toNum(v)      { return _extractNum(v) || 0; }
+
+function renderRangeBar() {
+  const el = document.getElementById('dm-range');
+  const fmt = n => n.toLocaleString();
+
+  // Build candidate rows from CLAIM MATRIX: need ≥2 numeric cells (non-numeric cells ok)
+  let rows = state.claims.filter(row => {
+    const numCells = row.cells.filter(c => c.value && c.value !== '—' && _isNumVal(c.value));
+    return numCells.length >= 2;
+  }).map(row => ({
+    label: row.claim,
+    points: row.cells
+      .filter(c => c.value && c.value !== '—' && _isNumVal(c.value))
+      .map(c => ({ source: c.source, n: _toNum(c.value), isConflict: c.status === 'conflict' })),
+  }));
+
+  // Fallback 1: extract numbers > 99 from source notes
+  if (!rows.length && state.sources.length >= 2) {
+    const points = state.sources
+      .map(s => {
+        const n = _toNum(s.note);
+        return n > 99 ? { source: s.name, n, isConflict: s.isConflict } : null;
+      })
+      .filter(Boolean);
+    if (points.length >= 2) {
+      const divLower = state.divergence.toLowerCase();
+      const label = divLower.includes('death') || divLower.includes('killed') ? 'deaths reported'
+                  : divLower.includes('missing') ? 'missing persons reported'
+                  : divLower.includes('displace') ? 'displaced persons reported'
+                  : divLower.includes('wound') || divLower.includes('injur') ? 'injured reported'
+                  : 'figures reported';
+      rows = [{ label, points }];
+    }
+  }
+
+  // Fallback 2: scan DIVERGENCE lines for "SourceName: N" or "SourceName reported N"
+  if (!rows.length && state.sources.length >= 2) {
+    const srcNames = state.sources.map(s => s.name);
+    const numsBySource = {};
+    for (const line of state.divergence.split('\n')) {
+      for (const name of srcNames) {
+        const pat = new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[^\\d]*(\\d[\\d,]*)', 'i');
+        const m = line.match(pat);
+        if (m) { numsBySource[name] = parseInt(m[1].replace(/,/g, ''), 10); }
+      }
+    }
+    const points = Object.entries(numsBySource)
+      .filter(([, n]) => n > 99)
+      .map(([name, n]) => {
+        const s = state.sources.find(x => x.name === name);
+        return { source: name, n, isConflict: s ? s.isConflict : false };
+      });
+    if (points.length >= 2) {
+      const divLower = state.divergence.toLowerCase();
+      const label = divLower.includes('death') || divLower.includes('killed') ? 'deaths reported'
+                  : divLower.includes('missing') ? 'missing persons reported'
+                  : divLower.includes('displace') ? 'displaced persons reported'
+                  : divLower.includes('wound') || divLower.includes('injur') ? 'injured reported'
+                  : 'figures reported';
+      rows = [{ label, points }];
+    }
+  }
+
+  if (!rows.length) { el.innerHTML = ''; return; }
+
+  el.innerHTML = rows.map((row, ri) => {
+    // Drop obvious outliers: points < 2% of the max value
+    const rawMax = Math.max(...row.points.map(p => p.n));
+    const pts = row.points.filter(p => p.n >= rawMax * 0.02);
+    if (pts.length < 2) return '';
+
+    // Sort left-to-right by value
+    pts.sort((a, b) => a.n - b.n);
+    const min = pts[0].n, max = pts[pts.length - 1].n;
+    const allAgree = min === max;
+
+    // Assign raw positions then enforce 8% minimum separation
+    const minSep = 8;
+    const pos = pts.map(p => allAgree ? 50 : Math.max(3, ((p.n - min) / (max - min)) * 94 + 3));
+    for (let i = 1; i < pos.length; i++) {
+      if (pos[i] - pos[i - 1] < minSep) pos[i] = pos[i - 1] + minSep;
+    }
+    // Shift left if pushed past right edge
+    const over = pos[pos.length - 1] - 97;
+    if (over > 0) pos.forEach((_, i) => { pos[i] = Math.max(3, pos[i] - over); });
+
+    // Build dots: alternate label above / below track to prevent overlap
+    const srcDateMap = {};
+    state.sources.forEach(s => { srcDateMap[s.name] = s.date && s.date !== 'unknown' ? s.date : null; });
+    const dotsHtml = pts.map((p, i) => {
+      const col = p.isConflict ? 'var(--amber)' : 'var(--green)';
+      const below = i % 2 === 1;
+      const dateStr = srcDateMap[p.source] ? `<br><span style="color:var(--text3)">${esc(srcDateMap[p.source])}</span>` : '';
+      return `<div class="range-dotset" style="left:${pos[i].toFixed(1)}%">
+        <div class="range-dotset-inner${below ? ' below' : ''}">
+          <div class="range-dotlbl" style="color:${col}">${fmt(p.n)}</div>
+          <div class="range-dot" style="background:${col}"></div>
+          <div class="range-tip">${esc(p.source)}${dateStr}</div>
+        </div>
+      </div>`;
+    }).join('');
+
+    const statHtml = allAgree
+      ? `<div class="range-stat all-agree">All sources agree: ${fmt(min)}</div>`
+      : `<div class="range-stat">Range: ${fmt(min)} – ${fmt(max)}  ·  ${pts.length} sources</div>`;
+    return `<div${ri > 0 ? ' style="margin-top:20px"' : ''}>
+      <div class="dm-sec-lbl">Reported ${esc(row.label)}</div>
+      <div class="range-block"><div class="range-track">${dotsHtml}</div></div>
+      ${statHtml}
+    </div>`;
+  }).filter(Boolean).join('');
+}
+
+function renderSplitZones() {
+  const el = document.getElementById('dm-split');
+  const agreedLines = state.agreed.split('\n')
+    .map(l => l.replace(/^[-*•]\s*/, '').trim()).filter(l => l.length > 3);
+  const agreedHtml = agreedLines.length >= 2
+    ? agreedLines.map(l => `<div class="zone-row"><span class="zone-check">✓</span><span class="zone-text">${mdInline(l)}</span></div>`).join('')
+    : '<div class="zone-empty">Insufficient cross-source agreement found.</div>';
+  const conflictClaims = state.claims.filter(r => r.cells.some(c => c.status === 'conflict'));
+  const disputedHtml = conflictClaims.length
+    ? conflictClaims.map(row => {
+        const cc = row.cells.filter(c => c.status === 'conflict' && c.value && c.value !== '—');
+        const pillsHtml = cc.map((c, i) =>
+          (i > 0 ? '<span class="disp-sep">←→</span>' : '') +
+          `<span class="val-pill">${esc(c.source)} ${esc(c.value)}</span>`
+        ).join('');
+        return `<div class="disp-row"><span class="disp-name">${esc(row.claim)}</span>${pillsHtml}</div>`;
+      }).join('')
+    : '<div class="zone-empty">No direct contradictions detected.</div>';
+  el.innerHTML = `
+    <div class="agreed-zone"><div class="zone-lbl green">Confirmed across sources</div>${agreedHtml}</div>
+    <div class="disputed-zone"><div class="zone-lbl amber">Disputed</div>${disputedHtml}</div>`;
+}
+
+function renderSpotlightCards() {
+  const el = document.getElementById('dm-spotlight');
+  const conflictClaims = state.claims.filter(r => r.cells.some(c => c.status === 'conflict'));
+  if (!conflictClaims.length) { el.innerHTML = ''; return; }
+  const srcTypeMap = {};
+  state.sources.forEach(s => { srcTypeMap[s.name.toLowerCase()] = s.type; });
+  el.innerHTML = '<div class="sec-hdg" style="margin-top:4px">Claim breakdown</div>' +
+    conflictClaims.map(row => {
+      const hasConflict = row.cells.some(c => c.status === 'conflict');
+      const valued = row.cells.filter(c => c.value && c.value !== '—' && _isNumVal(c.value));
+      if (!valued.length) return '';
+      const srcRowsHtml = valued.map(c => {
+        const t = srcTypeMap[c.source.toLowerCase()] || 'unknown';
+        const isConflict = c.status === 'conflict';
+        return `<div class="spc-src-row">
+          <span class="badge ${t}">${esc(typeLabel(t))}</span>
+          <span class="spc-src-name">${esc(c.source)}</span>
+          <span class="spc-val ${isConflict ? 'conflict' : 'agree'}">${esc(c.value)}</span>
+        </div>`;
+      }).join('');
+      return `<div class="spc-card">
+        <div class="spc-hdr">
+          <span class="spc-claim">${esc(row.claim)}</span>
+          <span class="spc-badge ${hasConflict ? 'conflict' : 'agree'}">${hasConflict ? '⚠ Conflict' : '✓ Consistent'}</span>
+        </div>
+        ${srcRowsHtml}
+      </div>`;
+    }).filter(Boolean).join('');
+}
+
+function renderDivergenceMap() {
+  renderRangeBar();
+  renderSplitZones();
+  renderSpotlightCards();
+}
+
+// ═══════════════════════════════════════════════════════════
 // LOADING STATE
 // ═══════════════════════════════════════════════════════════
 const STEPS = [
@@ -773,6 +1001,10 @@ function showView(view) {
 
 function switchTab(tab) {
   state.activeTab = tab;
+  document.getElementById('panel-map').classList.toggle('hidden', tab !== 'map');
+  document.getElementById('panel-sitrep').classList.toggle('hidden', tab !== 'sitrep');
+  document.getElementById('tab-map').classList.toggle('active', tab === 'map');
+  document.getElementById('tab-sitrep').classList.toggle('active', tab === 'sitrep');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -811,7 +1043,9 @@ document.getElementById('qform').addEventListener('submit', async e => {
     state.indexed    = data.sources_indexed || 0;
 
     state.sources  = parseSources(srcSec);
-    state.claims   = [];
+    const claimSec = extractSection(text, 'CLAIM MATRIX');
+    state.claims   = parseClaimMatrix(claimSec);
+    annotateConflicts(state.sources, state.claims);
     state.coverage = [];
     state.timeline = buildTimeline(state.sources, state.claims);
 
@@ -825,6 +1059,8 @@ document.getElementById('qform').addEventListener('submit', async e => {
     // Render everything
     renderSourceCards();
     renderSitrep();
+    renderDivergenceMap();
+    switchTab('map');
 
     // Show UI
     document.getElementById('idle').classList.add('hidden');
@@ -848,6 +1084,8 @@ function showErr(msg) {
 // EVENT LISTENERS
 // ═══════════════════════════════════════════════════════════
 document.getElementById('sitrep-btn').addEventListener('click', () => { switchTab('sitrep'); showView('analysis'); });
+document.getElementById('tab-map').addEventListener('click', () => switchTab('map'));
+document.getElementById('tab-sitrep').addEventListener('click', () => switchTab('sitrep'));
 document.getElementById('dp-close').addEventListener('click', closeDetail);
 document.getElementById('nav-analysis').addEventListener('click', () => showView('analysis'));
 document.getElementById('nav-timeline').addEventListener('click', () => showView('timeline'));
