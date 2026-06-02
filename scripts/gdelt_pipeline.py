@@ -63,19 +63,35 @@ def translate_to_english(text: str, source_lang: str) -> str:
         return text  # fall back to original so the article is still indexed
 
 _WIRE = {
-    "reuters.com", "apnews.com", "afp.com",
+    "reuters.com", "apnews.com", "ap.org", "afp.com",
     "rfi.fr", "france24.com", "africanews.com", "thepeninsulaqatar.com",
+    "xinhuanet.com", "tass.com", "anadoluagency.com", "aa.com.tr",
 }
 _INTERNATIONAL = {
     "bbc.com", "bbc.co.uk", "aljazeera.com", "theguardian.com", "nytimes.com",
-    "english.aawsat.com", "globalsecurity.org",
+    "washingtonpost.com", "dw.com", "english.aawsat.com", "globalsecurity.org",
+    "cnn.com", "middleeasteye.net", "pbs.org", "thestar.com.my", "the-star.co.ke",
+    "foxnews.com", "artnews.com", "mprnews.org", "middleeastmonitor.com",
+    "al-monitor.com", "the-independent.com", "independent.co.uk",
 }
 _LOCAL = {
     "libyaherald.com", "libyanexpress.com", "marsad.ly", "libyaobserver.ly",
+    "tolonews.com", "pajhwok.com", "ariananews.com",
     "skai.gr", "hurriyetdailynews.com", "lancashiretelegraph.co.uk",
+    "sandiegouniontribune.com", "jamaicaobserver.com", "protothema.gr",
+    "libyaherald.com", "english.ahram.org.eg",
 }
-_NGO = {"icrc.org", "msf.org", "unocha.org", "reliefweb.int", "amnesty.org"}
-_GOVERNMENT = {"unsmil.unmissions.org", "un.org"}
+_NGO = {
+    "icrc.org", "msf.org", "unocha.org", "reliefweb.int",
+    "amnesty.org", "hrw.org", "acleddata.com",
+}
+_GOVERNMENT = {
+    "unsmil.unmissions.org", "un.org", "state.gov", "fco.gov.uk", "gov.uk",
+}
+_OPINION = {
+    "mondaq.com", "ruthfullyyours.com", "algemeiner.com",
+    "antiwar.com", "honestreporting.com",
+}
 
 
 def classify_source(domain: str) -> str:
@@ -88,13 +104,26 @@ def classify_source(domain: str) -> str:
         return "local_press"
     if d in _NGO:
         return "ngo"
+    if d in _OPINION:
+        return "opinion"
     if d in _GOVERNMENT or ".gov" in d:
         return "government"
     return "unknown"
 
 
 def map_language(gdelt_language: str) -> str:
-    mapping = {"English": "en", "Arabic": "ar", "French": "fr", "Italian": "it"}
+    mapping = {
+        "English": "en",
+        "Arabic": "ar",
+        "French": "fr",
+        "Italian": "it",
+        "Greek": "el",
+        "Spanish": "es",
+        "German": "de",
+        "Portuguese": "pt",
+        "Russian": "ru",
+        "Turkish": "tr",
+    }
     if gdelt_language in mapping:
         return mapping[gdelt_language]
     return gdelt_language[:2].lower() if gdelt_language else "xx"
@@ -193,13 +222,28 @@ def search_gdelt(query: str, start_date: str, end_date: str, max_results: int = 
     return df
 
 
-def index_articles(articles_df: pd.DataFrame, index_name: str = "news-articles") -> int:
+def index_articles(
+    articles_df: pd.DataFrame,
+    index_name: str = "news-articles",
+    max_date: str = None,
+    event_id: str = "unknown",
+) -> int:
     """
     Fetch full text and index articles into Elasticsearch.
+    max_date: YYYYMMDD000000 string — skip articles whose seendate exceeds this
+              (prevents future-recrawled articles from corrupting historical corpora).
     Returns count of newly indexed documents.
     """
     if len(articles_df) == 0:
         return 0
+
+    # Parse max_date cutoff once
+    max_date_dt = None
+    if max_date:
+        try:
+            max_date_dt = datetime.strptime(max_date[:8], "%Y%m%d")
+        except Exception:
+            pass
 
     es = Elasticsearch(
         os.getenv("ELASTICSEARCH_ENDPOINT"),
@@ -250,13 +294,22 @@ def index_articles(articles_df: pd.DataFrame, index_name: str = "news-articles")
         if body is None:
             failed_fetch += 1
             continue
-        fetched += 1
 
         seendate = getattr(row, "seendate", "") or ""
         try:
-            published_date = datetime.strptime(seendate[:8], "%Y%m%d").strftime("%Y-%m-%d")
+            article_dt = datetime.strptime(seendate[:8], "%Y%m%d")
+            published_date = article_dt.strftime("%Y-%m-%d")
         except Exception:
+            article_dt = None
             published_date = seendate[:10] if len(seendate) >= 10 else ""
+
+        # Skip future-recrawled articles that exceed the query end date
+        if max_date_dt and article_dt and article_dt > max_date_dt:
+            print(f"Skipping future-dated article ({published_date}): {url[:60]}")
+            failed_fetch += 1
+            continue
+
+        fetched += 1
 
         domain = getattr(row, "domain", "") or ""
         language_raw = getattr(row, "language", "") or ""
@@ -277,7 +330,7 @@ def index_articles(articles_df: pd.DataFrame, index_name: str = "news-articles")
             "published_date": published_date,
             "url": url,
             "sourcecountry": sourcecountry,
-            "event_id": "libya-derna-2023-09",
+            "event_id": event_id,
         }
 
         try:
@@ -297,9 +350,11 @@ def populate_index_for_query(
     query: str,
     start_date: str = None,
     end_date: str = None,
+    event_id: str = None,
 ) -> int:
     """
     Full pipeline: GDELT search → text fetch → Elastic index.
+    Passes end_date as max_date to index_articles to reject future-recrawled articles.
     Returns count of newly indexed articles.
     """
     t_start = time.time()
@@ -309,10 +364,13 @@ def populate_index_for_query(
         end_date = today.strftime("%Y%m%d") + "000000"
         start_date = (today - timedelta(days=180)).strftime("%Y%m%d") + "000000"
 
+    if event_id is None:
+        event_id = f"query-{start_date[:8]}-{end_date[:8]}"
+
     newly_indexed = 0
 
     df_en = search_gdelt(query, start_date, end_date)
-    newly_indexed += index_articles(df_en)
+    newly_indexed += index_articles(df_en, max_date=end_date, event_id=event_id)
 
     for lang_iso in EXTRA_LANGUAGES:
         lang_name = GDELT_LANGUAGE_NAMES[lang_iso]
@@ -320,7 +378,7 @@ def populate_index_for_query(
         print(f"Fetching {lang_name} articles...")
         time.sleep(GDELT_SLEEP)
         df_lang = search_gdelt(lang_query, start_date, end_date, max_results=25)
-        newly_indexed += index_articles(df_lang)
+        newly_indexed += index_articles(df_lang, max_date=end_date, event_id=event_id)
 
     elapsed = round(time.time() - t_start, 1)
     print(f"Pipeline total runtime: {elapsed}s")
