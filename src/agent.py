@@ -55,7 +55,8 @@ SYSTEM_PROMPT = (
     "CONTESTED (N sources say X, N sources say Y): [claim]\n\n"
     "Rules: every claim must be cited to its source. Never assert anything beyond what a source "
     "explicitly said. If fewer than 3 sources are found, say so and suggest a broader query."
-)
+    "If fewer than 3 sources are found that are relevant to the query, do not attempt an analysis. Instead respond with exactly:INSUFFICIENT SOURCES: Only N relevant articles found for this query. Try a more specific date range or different keywords."
+    )
 
 async def main():
     # Connect to Elastic MCP

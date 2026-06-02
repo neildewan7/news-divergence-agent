@@ -116,6 +116,29 @@ def _es_count(index: str = "news-articles") -> int:
         return -1
 
 
+def _es_relevant_count(keywords: str, index: str = "news-articles") -> int:
+    """Return how many docs match all query terms (AND logic) in body or title."""
+    # Strip GDELT AND operators so "Derna AND flood" → "Derna flood"
+    clean = " ".join(w for w in keywords.split() if w.upper() != "AND").strip()
+    try:
+        resp = _es_client().count(
+            index=index,
+            body={
+                "query": {
+                    "multi_match": {
+                        "query": clean,
+                        "fields": ["title", "body"],
+                        "operator": "and",
+                    }
+                }
+            },
+        )
+        return resp["count"]
+    except Exception as exc:
+        print(f"ES relevant count error: {exc}")
+        return 0
+
+
 def _es_sample(index: str = "news-articles", size: int = 5) -> list:
     try:
         resp = _es_client().search(
@@ -260,11 +283,12 @@ def analyze():
             "articles_in_index_after": docs_after,
         }
     else:
-        current_count = _es_count()
-        if current_count >= 50:
-            print(f"Index has {current_count} docs — skipping GDELT pipeline.")
+        relevant = _es_relevant_count(keywords)
+        if relevant >= 10:
+            print(f"Found {relevant} relevant docs for query — skipping GDELT pipeline.")
             newly_indexed = 0
         else:
+            print(f"Found {relevant} relevant docs — running GDELT pipeline.")
             try:
                 newly_indexed = populate_index_for_query(
                     keywords,
