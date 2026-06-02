@@ -3,6 +3,7 @@ import time
 import hashlib
 import requests
 import pandas as pd
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from elasticsearch import Elasticsearch
 from dotenv import load_dotenv
@@ -236,9 +237,16 @@ def index_articles(articles_df: pd.DataFrame, index_name: str = "news-articles")
     failed_fetch = 0
     indexed = 0
 
-    for doc_id, row in to_index.items():
+    # Fetch all article texts concurrently, then index sequentially.
+    def _fetch(item):
+        doc_id, row = item
+        return doc_id, row, fetch_article_text(getattr(row, "url", "") or "")
+
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        fetch_results = list(pool.map(_fetch, to_index.items()))
+
+    for doc_id, row, body in fetch_results:
         url = getattr(row, "url", "") or ""
-        body = fetch_article_text(url)
         if body is None:
             failed_fetch += 1
             continue
@@ -256,10 +264,7 @@ def index_articles(articles_df: pd.DataFrame, index_name: str = "news-articles")
         sourcecountry = getattr(row, "sourcecountry", "") or ""
         title = getattr(row, "title", "") or ""
 
-        if lang_iso != "en":
-            body_en = translate_to_english(body, lang_iso)
-        else:
-            body_en = body
+        body_en = translate_to_english(body, lang_iso) if lang_iso != "en" else body
 
         doc = {
             "id": doc_id,
