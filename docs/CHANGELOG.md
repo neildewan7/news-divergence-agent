@@ -163,8 +163,62 @@
 - Frontend calls `/analyze` via relative URL — no CORS headers needed (same origin).
 
 ### Open
-- Frontend design needs significant revision (current version not satisfactory)
+- ~~Frontend design needs significant revision~~ — new UI shipped Day 6
 - Arabic-language GDELT coverage for Derna
-- Cloud Run redeployment with current codebase (frontend + SYSTEM_PROMPT fix)
+- ~~Cloud Run redeployment~~ — done Day 6
+- Demo video
+- Devpost submission
+
+## 2026-06-02 — Day 6 (Neil + Clara)
+
+### Decisions
+- **Removed divergence map tab**: the CLAIM MATRIX table was unreliable — Gemini
+  copied `:VALUE:STATUS` placeholders from the prompt example into the header row,
+  making the parser return 0 rows every time. SITREP draft is now the only
+  right-panel view.
+- **Skip GDELT pipeline when index is warm**: if the index already has ≥ 50 docs,
+  bypass all GDELT API calls and go straight to the agent. Eliminates 45–90s of
+  dead waiting on repeat queries against the same event.
+- **URLs in source cards**: added URL as 6th pipe field in SOURCE BREAKDOWN prompt;
+  agent pulls the article URL from Elasticsearch search results and the UI renders
+  a clickable "↗ View article" link on each source card.
+
+### Progress
+- Clara's new UI merged (dark theme, sidebar, metrics strip, SITREP panel) via
+  merge commit; app.py kept (debug endpoint, GDELT pipeline integration).
+- `scripts/gdelt_pipeline.py` (Clara): added multilingual GDELT passes (Arabic,
+  French, Greek via `sourcelang:` filter), Gemini auto-translation of non-English
+  article bodies (`translate_to_english()`), `body_original` field in index docs.
+- Concurrent article fetch: replaced sequential `fetch_article_text()` loop with
+  `ThreadPoolExecutor(max_workers=10)`. 15 articles now fetch in parallel
+  (bounded by single 5s timeout) instead of up to 75s sequentially.
+- Capped article fetch at 15 per GDELT pass; reduced trafilatura timeout from 10s
+  to 5s using `requests.get()` directly for precise timeout control.
+- `GDELT_SLEEP` reduced from 15s to 5s (429s handled by 20s backoff retry).
+- SYSTEM_PROMPT synced between `app.py` and `agent.py`: both now use 5-section
+  format (AGREED FACTS / DIVERGENCE / SOURCE BREAKDOWN / CLAIM MATRIX /
+  CONFIDENCE SUMMARY). `app.py` retains the CRITICAL `time_range` instruction
+  that prevents MCP tool validation 500 errors.
+- Fixed markdown rendering in SITREP DISPUTED CLAIMS section: added `mdInline()`
+  helper that converts `**bold**` → `<strong>` before injecting into innerHTML.
+  Previously `esc()` was used which left `**` as literal text.
+- DIVERGENT CLAIMS metric now counts bullet points from DIVERGENCE section
+  (reliable) instead of parsed CLAIM MATRIX rows (unreliable).
+- `scripts/backfill_source_types.py` — one-off script: scrolls all index docs,
+  re-runs `classify_source()`, bulk-updates any with stale `source_type: unknown`.
+  11/76 docs updated on first run.
+- `GET /debug` endpoint: returns index doc count, 5 sample docs, current
+  SYSTEM_PROMPT, and a live GDELT rate-limit probe.
+- `POST /analyze?debug=true`: adds debug block with GDELT articles found/indexed,
+  rate limit status, and index doc count before/after pipeline.
+
+### Performance (end-to-end, warm index ≥50 docs)
+- GDELT pipeline: skipped (0s)
+- Agent + Elastic MCP search: ~30s
+- Total: ~30s vs ~90s before
+
+### Open
+- Cloud Run redeployment with Day 6 code
+- Arabic GDELT coverage (requires native-script query or `sourcelang:Arabic` pass)
 - Demo video
 - Devpost submission
