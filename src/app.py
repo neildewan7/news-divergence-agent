@@ -204,31 +204,42 @@ def extract_query_params(user_query: str) -> dict:
     Falls back to the past 180 days if extraction fails.
     """
     today = datetime.utcnow()
+    today_str = today.strftime("%Y%m%d") + "000000"
     fallback = {
         "keywords": user_query,
         "start_date": (today - timedelta(days=180)).strftime("%Y%m%d") + "000000",
-        "end_date": today.strftime("%Y%m%d") + "000000",
+        "end_date": today_str,
     }
 
     prompt = (
-        "Extract search parameters from this news query. Return JSON only with keys: "
-        "keywords (AND-separated terms, no quotes), "
-        "start_date (YYYYMMDD000000), end_date (YYYYMMDD000000). "
-        "If no date is mentioned, set end_date to today and start_date to 180 days ago. "
+        "Extract search parameters from this news query. "
+        "Return a JSON object with exactly these keys:\n"
+        "  keywords: AND-separated search terms (no quotes, no dates)\n"
+        f"  start_date: format YYYYMMDD000000 (today is {today_str[:8]})\n"
+        "  end_date: format YYYYMMDD000000\n"
+        "If no date range is mentioned, set end_date to today and start_date to 180 days ago.\n"
+        "Return ONLY the JSON object, no markdown, no explanation.\n"
         f"Query: {user_query}"
     )
 
     try:
         response = _extract_llm.invoke(prompt)
         text = response.content if hasattr(response, "content") else str(response)
-        match = re.search(r'\{[^{}]+\}', text, re.DOTALL)
-        if match:
-            parsed = json.loads(match.group())
-            return {
-                "keywords": parsed.get("keywords", user_query),
-                "start_date": parsed.get("start_date", fallback["start_date"]),
-                "end_date": parsed.get("end_date", fallback["end_date"]),
-            }
+        # Strip markdown code fences if present
+        text = re.sub(r"```(?:json)?\s*", "", text).strip()
+        # Find the outermost JSON object (handles nested braces)
+        start = text.find("{")
+        end = text.rfind("}") + 1
+        if start != -1 and end > start:
+            parsed = json.loads(text[start:end])
+            keywords = str(parsed.get("keywords", user_query)).strip()
+            start_date = str(parsed.get("start_date", fallback["start_date"])).strip()
+            end_date = str(parsed.get("end_date", fallback["end_date"])).strip()
+            # Sanity-check: dates must be 14-char numeric strings
+            if (keywords and
+                    re.fullmatch(r"\d{14}", start_date) and
+                    re.fullmatch(r"\d{14}", end_date)):
+                return {"keywords": keywords, "start_date": start_date, "end_date": end_date}
     except Exception as exc:
         print(f"extract_query_params failed: {exc}")
 
@@ -302,6 +313,7 @@ def analyze():
             "gdelt_rate_limited": gdelt_rate_limited,
             "articles_in_index_before": docs_before,
             "articles_in_index_after": docs_after,
+            "relevant_docs_for_query": _es_relevant_count(keywords),
         }
     else:
         relevant = _es_relevant_count(keywords)
@@ -321,8 +333,19 @@ def analyze():
                 newly_indexed = 0
         debug_info = None
 
+    # Build an enriched agent query: strip raw dates from user text and
+    # prepend the extracted keywords so the Elastic semantic search vector
+    # is focused on event terms rather than date noise.
+    clean_keywords = " ".join(w for w in keywords.split() if w.upper() != "AND")
+    agent_query = (
+        f"Search for articles about: {clean_keywords}\n"
+        f"Original user query: {query}\n"
+        f"Date range: {start_date[:8]} to {end_date[:8]}\n"
+        "Analyse how different sources reported this event."
+    )
+
     async def _run():
-        return await _agent.ainvoke({"messages": [{"role": "user", "content": query}]})
+        return await _agent.ainvoke({"messages": [{"role": "user", "content": agent_query}]})
 
     t_start = time.time()
     try:
