@@ -66,6 +66,7 @@ _WIRE = {
     "reuters.com", "apnews.com", "ap.org", "afp.com",
     "rfi.fr", "france24.com", "africanews.com", "thepeninsulaqatar.com",
     "xinhuanet.com", "tass.com", "anadoluagency.com", "aa.com.tr",
+    "rtbf.be", "antaranews.com", "article.wn.com",
 }
 _INTERNATIONAL = {
     "bbc.com", "bbc.co.uk", "aljazeera.com", "theguardian.com", "nytimes.com",
@@ -73,13 +74,18 @@ _INTERNATIONAL = {
     "cnn.com", "middleeasteye.net", "pbs.org", "thestar.com.my", "the-star.co.ke",
     "foxnews.com", "artnews.com", "mprnews.org", "middleeastmonitor.com",
     "al-monitor.com", "the-independent.com", "independent.co.uk",
+    "lemonde.fr", "fr.timesofisrael.com", "lematin.ch", "bfmtv.com",
+    "alquds.co.uk", "arabic.people.com.cn", "modernghana.com",
 }
 _LOCAL = {
     "libyaherald.com", "libyanexpress.com", "marsad.ly", "libyaobserver.ly",
     "tolonews.com", "pajhwok.com", "ariananews.com",
     "skai.gr", "hurriyetdailynews.com", "lancashiretelegraph.co.uk",
     "sandiegouniontribune.com", "jamaicaobserver.com", "protothema.gr",
-    "libyaherald.com", "english.ahram.org.eg",
+    "english.ahram.org.eg",
+    "newsit.gr", "capital.gr", "alwasat.ly", "sudanile.com",
+    "bucksfreepress.co.uk", "ceskenoviny.cz",
+    "dostor.org", "almasryalyoum.com", "vetogate.com", "albayan.ae",
 }
 _NGO = {
     "icrc.org", "msf.org", "unocha.org", "reliefweb.int",
