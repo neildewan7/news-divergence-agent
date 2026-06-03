@@ -34,6 +34,16 @@ SYSTEM_PROMPT = (
     'query="Derna flood casualties", index="news-articles-v2", '
     'time_range={"from":"now-3y","to":"now"}).\n\n'
 
+    "RETRIEVAL — gather BROADLY before analysing:\n"
+    "- Your goal is to compare MANY sources, so retrieve as many relevant articles "
+    "as you can. Aim for at least 8-10 distinct sources when they exist.\n"
+    "- Make MULTIPLE search calls with different angle keywords to widen coverage "
+    "(e.g. one for the event + 'casualties', one for + 'death toll', one for "
+    "+ 'damage', one for + 'investigation'). Combine all results.\n"
+    "- NEVER base the analysis on a single article when more are available. If your "
+    "first search returns only one or two sources, run additional searches with "
+    "broader or alternative keywords before writing your answer.\n\n"
+
     "SOURCE NAMING RULES:\n"
     "- Every source name must come from the search result metadata (the 'source' or domain field).\n"
     "- If no display name is available, use the domain exactly as it appears (e.g. 'aa.com.tr').\n"
