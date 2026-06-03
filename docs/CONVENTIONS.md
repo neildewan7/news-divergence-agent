@@ -5,7 +5,8 @@
 - Orchestration: LangChain MCP adapter + LangGraph ReAct agent
 - Tool integration: Elastic MCP server
 - Hosting target: Google Cloud Run
-- Embeddings: Vertex AI multilingual text-embedding model
+- Embeddings: Elastic in-cluster `multilingual-e5-small` via `semantic_text`
+  (not Vertex AI — keeps embeddings inside the Elastic partner-track surface)
 - Frontend: minimal single-page UI (plain HTML or React, TBD)
 
 ## Hackathon constraints
@@ -31,6 +32,28 @@
   uses 15s.
 - GDELT response parsing: check for `text/html` content-type before JSON parsing —
   the API returns HTML error text (not JSON) for some error conditions with HTTP 200.
+
+## Semantic search (multilingual)
+- The `news-articles` index uses a `semantic_text` field (`semantic_field`) backed by
+  Elastic's in-cluster **`.multilingual-e5-small-elasticsearch`** inference endpoint
+  (384-dim dense, multilingual). `title` and `body` `copy_to` this field; Elastic
+  embeds them automatically on index.
+- **Store articles in their ORIGINAL language.** Do NOT translate before indexing.
+  multilingual-e5 embeds all languages into one shared space, so an English query
+  retrieves Arabic / French / Greek documents directly. The old Gemini
+  `translate_to_english()` step was removed — it was slower, cost Vertex AI calls,
+  and lost nuance.
+- Hackathon compliance: multilingual-e5 is a **built-in Elastic feature** (partner
+  track permitted). Do NOT switch the embedding endpoint to `.openai-*` — that would
+  introduce a non-permitted AI provider and disqualify the entry.
+- Known limitation: the `-small` model aligns English↔French (same script) more
+  tightly than English↔Arabic; Arabic docs are retrievable but rank lower for
+  English queries. Upgrade to `-base`/`-large` or retrieve more candidates if needed.
+- **Gotcha:** `index_test_data.py` only creates the index `if not exists`. If the
+  GDELT pipeline's `es.index()` auto-creates `news-articles` first, it is born with
+  plain dynamic text fields and NO semantic field. Always create the index with the
+  explicit mapping (run `index_test_data.py`) before the pipeline writes to a fresh
+  cluster, or semantic search silently degrades to BM25.
 
 ## What the agent does and does not do
 - DOES: surface what each source claimed; flag where sources diverge; cite every claim

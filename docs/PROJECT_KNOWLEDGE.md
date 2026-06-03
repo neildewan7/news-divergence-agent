@@ -51,12 +51,19 @@ GDELT coverage and weaker casualty-count divergence signal.
 ## Decisions made
 - Partner track: Elastic
 - Framing: humanitarian / accountability research
-- v1 languages: English, French, Greek (confirmed from GDELT); Arabic TBD
+- v1 languages: English, French, Greek, Arabic — all confirmed from GDELT and
+  retrievable via multilingual semantic search
 - Corpus: live from GDELT at query time; 5 synthetic articles as fallback
 - License: MIT
 - Structured output: four fixed sections (AGREED FACTS / DIVERGENCE / SOURCE BREAKDOWN /
   CONFIDENCE SUMMARY) enforced via SYSTEM_PROMPT in src/app.py
-- Source type taxonomy: wire / international / local_press / ngo / government / unknown
+- Source type taxonomy: wire / international / local_press / ngo / government /
+  opinion / unknown
+- **Semantic retrieval**: `semantic_text` field embedded by Elastic's in-cluster
+  `multilingual-e5-small`. Articles stored in original language; cross-language
+  search works without translation. The earlier Gemini translation step was removed.
+  (Validated on `news-articles-v2`; live `news-articles` cutover deferred — see
+  CHANGELOG Day 8.)
 
 ## Hackathon Rules — Key Constraints
 

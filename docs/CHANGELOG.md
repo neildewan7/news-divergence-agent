@@ -303,3 +303,55 @@
 - Agent to read `source_type` from index metadata instead of inferring
 - Demo video
 - Devpost submission
+
+## 2026-06-03 — Day 8 (Neil)
+
+### Major finding
+- **The live `news-articles` index had NO semantic field.** Its mapping was plain
+  dynamic text fields — `body`, `title`, etc. — with no `semantic_text` and no
+  `copy_to`. Cause: the GDELT pipeline's `es.index()` auto-created the index with
+  default dynamic mappings before `index_test_data.py` (whose explicit `semantic_text`
+  mapping only runs `if not exists`) ever applied. **Search has been BM25 lexical
+  this whole time, never semantic** — contrary to prior assumptions in the docs.
+
+### Decision: multilingual semantic search, store originals, drop translation
+- Validated `.multilingual-e5-small-elasticsearch` (Elastic in-cluster, 384-dim,
+  multilingual, partner-track compliant — NOT OpenAI/Anthropic).
+- Built throwaway `news-articles-v2` with a `semantic_text` field, reindexed all
+  234 docs storing each article in its ORIGINAL language (swapped `body_original`
+  into `body` for 97 non-English docs).
+- **Proof of cross-language retrieval (no translation):**
+  - English query "humanitarian aid and reconstruction" → 3 French lemonde.fr
+    articles in top 10
+  - Arabic query "ضحايا الفيضانات في درنة" → Arabic + French + English hits
+  - Arabic text confirmed stored natively (aljazeera.net, albayan.ae, alwasat.ly)
+- Caveat: `-small` aligns English↔French tighter than English↔Arabic; Arabic
+  retrievable but ranks lower for English queries.
+
+### Code changes (no live index cutover yet — deliberately deferred)
+- `scripts/gdelt_pipeline.py`: removed `translate_to_english()`, `_get_gemini()`,
+  the `_gemini` global, the `ChatVertexAI` import, and `GCP_PROJECT`. `index_articles()`
+  now stores the original-language text directly in `body` (no `body_original`).
+  Faster indexing, zero Vertex AI translation cost.
+- `scripts/index_test_data.py`: `semantic_field` mapping now pins
+  `inference_id = .multilingual-e5-small-elasticsearch` (was defaulting to
+  English-only ELSER). Applies to the next fresh `news-articles` creation.
+- `docs/CONVENTIONS.md`: added "Semantic search (multilingual)" section documenting
+  the model, the store-originals rule, hackathon compliance, and the index-creation
+  ordering gotcha.
+
+### Not done (user chose "stop here, just update code")
+- Live `news-articles` NOT recreated — still BM25. Cutover deferred to a later
+  deliberate step (delete + recreate with semantic mapping + reindex from v2, OR
+  repoint the Agent Builder MCP tool at v2).
+- `news-articles-v2` left in place as the validated proof/staging index.
+- Whether the MCP `platform_core_search` tool issues a semantic vs `match` query
+  against the new field is unconfirmed — verify after cutover.
+
+### Open
+- Cutover `news-articles` to the semantic multilingual mapping (destructive — reindex)
+- Confirm Agent Builder tool uses the semantic field post-cutover
+- Re-examine stale language codes from pre-Day-7 docs ("gr"→"el", "in"/"ch"/"cz"
+  fallback artifacts) on next clean reindex
+- Cloud Run redeployment
+- Demo video / Devpost submission

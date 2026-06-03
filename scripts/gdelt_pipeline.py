@@ -3,11 +3,10 @@ import time
 import hashlib
 import requests
 import pandas as pd
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from elasticsearch import Elasticsearch
 from dotenv import load_dotenv
-from langchain_google_vertexai import ChatVertexAI
 
 import trafilatura
 
@@ -17,9 +16,9 @@ GDELT_BASE = "https://api.gdeltproject.org/api/v2/doc/doc"
 GDELT_HEADERS = {"User-Agent": "news-divergence-agent/1.0"}
 GDELT_SLEEP = 5  # minimum seconds between consecutive API calls
 
-GCP_PROJECT = "news-divergence-project"
-
-# Languages to query in addition to English, in GDELT's full-name format
+# Languages to query in addition to English, in GDELT's full-name format.
+# Articles are stored in their original language; Elastic's multilingual
+# semantic_text field handles cross-language retrieval — no translation step.
 GDELT_LANGUAGE_NAMES = {
     "ar": "Arabic",
     "fr": "French",
@@ -28,39 +27,6 @@ GDELT_LANGUAGE_NAMES = {
     "it": "Italian",
 }
 EXTRA_LANGUAGES = ["ar", "fr", "el"]
-
-_gemini = None
-
-def _get_gemini():
-    global _gemini
-    if _gemini is None:
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            _gemini = ChatVertexAI(
-                model="gemini-2.5-flash",
-                project=GCP_PROJECT,
-                location="us-central1",
-            )
-    return _gemini
-
-
-def translate_to_english(text: str, source_lang: str) -> str:
-    """Translate text to English using Gemini via Vertex AI."""
-    try:
-        llm = _get_gemini()
-        prompt = (
-            f"Translate the following text to English. "
-            f"Return only the translated text, no explanation.\n\n{text[:3000]}"
-        )
-        response = llm.invoke(prompt)
-        result = response.content if hasattr(response, "content") else str(response)
-        if isinstance(result, list):
-            result = "".join(b.get("text", "") for b in result if isinstance(b, dict) and b.get("type") == "text")
-        return result.strip() or text
-    except Exception as exc:
-        print(f"Translation failed for lang={source_lang}: {exc}")
-        return text  # fall back to original so the article is still indexed
 
 _WIRE = {
     "reuters.com", "apnews.com", "ap.org", "afp.com",
@@ -323,13 +289,14 @@ def index_articles(
         sourcecountry = getattr(row, "sourcecountry", "") or ""
         title = getattr(row, "title", "") or ""
 
-        body_en = translate_to_english(body, lang_iso) if lang_iso != "en" else body
-
+        # Store the article in its ORIGINAL language. Elastic's multilingual
+        # semantic_text field (multilingual-e5) embeds it directly, so no
+        # translation is needed — cross-language retrieval happens in the
+        # shared embedding space. See docs/CONVENTIONS.md (Semantic search).
         doc = {
             "id": doc_id,
             "title": title,
-            "body": body_en,
-            "body_original": body,
+            "body": body,
             "source": domain,
             "source_type": classify_source(domain),
             "language": lang_iso,

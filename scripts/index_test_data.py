@@ -11,6 +11,13 @@ es_client = Elasticsearch(
 
 INDEX_NAME = "news-articles"
 
+# Multilingual semantic mapping. title + body (stored in each article's
+# ORIGINAL language) copy into semantic_field, which Elastic embeds with the
+# in-cluster multilingual-e5-small model. This enables cross-language semantic
+# retrieval (an English query matches Arabic/French/Greek docs) with no
+# translation step. See docs/CONVENTIONS.md → "Semantic search".
+SEMANTIC_INFERENCE_ID = ".multilingual-e5-small-elasticsearch"
+
 index_mapping = {
     "mappings": {
         "properties": {
@@ -23,7 +30,10 @@ index_mapping = {
             "event_id": {"type": "keyword"},
             "url": {"type": "keyword"},
             "sourcecountry": {"type": "keyword"},
-            "semantic_field": {"type": "semantic_text"},
+            "semantic_field": {
+                "type": "semantic_text",
+                "inference_id": SEMANTIC_INFERENCE_ID,
+            },
         }
     }
 }
