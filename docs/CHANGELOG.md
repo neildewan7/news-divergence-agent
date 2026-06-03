@@ -401,6 +401,21 @@ agent to search index `news-articles-v2`; (b) repoint `gdelt_pipeline.py` +
 `index_test_data.py` writes to `news-articles-v2`; (c) end-to-end test. Optionally
 layer hybrid RRF later. Cross-language surfacing remains a separate follow-up.
 
+### DONE — non-destructive cutover to news-articles-v2
+- `src/app.py`: SYSTEM_PROMPT now instructs the agent to call `platform_core_search`
+  with `index="news-articles-v2"` (+ the existing time_range requirement). Added
+  `INDEX_NAME = "news-articles-v2"` constant; `_es_count`, `_es_relevant_count`,
+  `_es_sample` all default to it, so the warm-index skip checks the semantic index.
+- `src/agent.py`: SYSTEM_PROMPT synced to the same index instruction.
+- `scripts/gdelt_pipeline.py`: `index_articles()` default `index_name` →
+  `news-articles-v2` (pipeline now writes new articles to the semantic index).
+- `scripts/index_test_data.py`: `INDEX_NAME` → `news-articles-v2`.
+- End-to-end `/analyze?debug=true` test ("Libya Derna floods September 2023"):
+  all 4 sections, no "Unknown Source", real sources (aa.com.tr, aljazeera.com,
+  news.un.org, english.alarabiya.net), warm-skip correct (40 relevant docs in v2),
+  agent exec ~40s. No regression.
+- Legacy `news-articles` (BM25) left intact as a fallback — nothing deleted.
+
 ### Open
 - Decide cutover architecture: hybrid RRF (not pure semantic) against a semantic
   `news-articles`

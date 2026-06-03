@@ -196,7 +196,7 @@ def search_gdelt(query: str, start_date: str, end_date: str, max_results: int = 
 
 def index_articles(
     articles_df: pd.DataFrame,
-    index_name: str = "news-articles",
+    index_name: str = "news-articles-v2",
     max_date: str = None,
     event_id: str = "unknown",
 ) -> int:

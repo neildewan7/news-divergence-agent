@@ -9,7 +9,7 @@ es_client = Elasticsearch(
     api_key=os.getenv("ELASTICSEARCH_API_KEY"),
 )
 
-INDEX_NAME = "news-articles"
+INDEX_NAME = "news-articles-v2"
 
 # Multilingual semantic mapping. title + body (stored in each article's
 # ORIGINAL language) copy into semantic_field, which Elastic embeds with the

@@ -27,12 +27,14 @@ DEBUG = False
 SYSTEM_PROMPT = (
     "You are a humanitarian news analysis assistant helping researchers understand "
     "how the same disaster or conflict event is reported across different sources.\n\n"
-    "When given a query, use the platform_core_search tool to search the news-articles "
-    "Elasticsearch index.\n\n"
-    "CRITICAL: you MUST always pass time_range when calling platform_core_search. "
-    "The tool will reject calls that omit it. Always use exactly this structure:\n"
-    '  time_range: {"from": "now-3y", "to": "now"}\n'
-    "Never call platform_core_search without time_range — it will fail with a validation error.\n\n"
+    "When given a query, use the platform_core_search tool to find articles.\n\n"
+    "CRITICAL — tool call requirements (the tool rejects calls that omit either):\n"
+    '  1. index: "news-articles-v2"  (always search this index — it has multilingual '
+    "semantic search; do NOT use 'news-articles')\n"
+    '  2. time_range: {"from": "now-3y", "to": "now"}\n'
+    "Always pass both. Example call: platform_core_search("
+    'query="Derna flood casualties", index="news-articles-v2", '
+    'time_range={"from":"now-3y","to":"now"}).\n\n'
 
     "SOURCE NAMING RULES:\n"
     "- Every source name must come from the search result metadata (the 'source' or domain field).\n"
@@ -118,6 +120,10 @@ _extract_llm = ChatVertexAI(
 
 app = Flask(__name__)
 
+# Index the agent and pipeline target. news-articles-v2 has the multilingual
+# semantic_text field; the legacy news-articles (BM25-only) is kept as a fallback.
+INDEX_NAME = "news-articles-v2"
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -129,7 +135,7 @@ def _es_client() -> Elasticsearch:
     )
 
 
-def _es_count(index: str = "news-articles") -> int:
+def _es_count(index: str = INDEX_NAME) -> int:
     try:
         return _es_client().count(index=index)["count"]
     except Exception as exc:
@@ -137,7 +143,7 @@ def _es_count(index: str = "news-articles") -> int:
         return -1
 
 
-def _es_relevant_count(keywords: str, index: str = "news-articles") -> int:
+def _es_relevant_count(keywords: str, index: str = INDEX_NAME) -> int:
     """Return how many docs match all query terms (AND logic) in body or title."""
     # Strip GDELT AND operators so "Derna AND flood" → "Derna flood"
     clean = " ".join(w for w in keywords.split() if w.upper() != "AND").strip()
@@ -160,7 +166,7 @@ def _es_relevant_count(keywords: str, index: str = "news-articles") -> int:
         return 0
 
 
-def _es_sample(index: str = "news-articles", size: int = 5) -> list:
+def _es_sample(index: str = INDEX_NAME, size: int = 5) -> list:
     try:
         resp = _es_client().search(
             index=index,
