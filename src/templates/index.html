@@ -479,16 +479,18 @@ function parseSources(secText) {
   return lines.map(line => {
     const raw = line.replace(/^\s*[-*]\s*/, '');
     const parts = raw.split('|').map(p => p.trim());
-    // Format: NAME | TYPE | LANG | DATE | URL | Note
-    // Detect whether parts[4] is a URL or the note (backwards-compat)
-    const hasUrl = parts[4] && /^https?:\/\//i.test(parts[4]);
+    // 6-field: NAME|TYPE|LANG|DATE|URL|NOTE.  5-field legacy: NAME|TYPE|LANG|DATE|NOTE.
+    // Decide by field count so a literal "unknown" URL never gets read as the note.
+    const sixField = parts.length >= 6;
+    const urlRaw = sixField ? parts[4] : '';
+    const note = sixField ? parts.slice(5).join(' | ') : (parts[4] || '');
     return {
       name:  parts[0] || '—',
       type:  (parts[1] || 'unknown').toLowerCase().replace(/\s+/g,'_'),
       lang:  (parts[2] || 'en').toLowerCase().replace(/\s+/g,''),
       date:  parts[3] || '',
-      url:   hasUrl ? parts[4] : (parts[4] !== 'unknown' && /^https?:\/\//i.test(parts[4]) ? parts[4] : ''),
-      note:  hasUrl ? (parts[5] || '') : (parts[4] || parts[3] || ''),
+      url:   /^https?:\/\//i.test(urlRaw) ? urlRaw : '',
+      note:  note || '',
       isConflict: false,
     };
   });
@@ -553,14 +555,14 @@ function parseCoverage(secText) {
 }
 
 // Mark sources as conflict if they appear in any conflict cell in the matrix
-function annotateConflicts(sources, claims) {
+function annotateConflicts(sources, divergences) {
+  // A source is "in conflict" if it appears as a point in any divergence topic.
   const conflictSet = new Set();
-  for (const row of claims) {
-    for (const cell of row.cells) {
-      if (cell.status === 'conflict') conflictSet.add(cell.source.toLowerCase());
+  for (const t of (divergences || [])) {
+    for (const p of (t.points || [])) {
+      if (p.source) conflictSet.add(p.source.toLowerCase());
     }
   }
-  // Also scan raw divergence text for source names
   const divText = state.divergence.toLowerCase();
   sources.forEach(s => {
     if (conflictSet.has(s.name.toLowerCase()) || divText.includes(s.name.toLowerCase())) {
@@ -720,41 +722,37 @@ function openDetail(src) {
   ].map(m => `<div class="detail-meta-cell"><div class="detail-meta-lbl">${esc(m.label)}</div><div class="detail-meta-val">${esc(m.value)}</div></div>`).join('');
   // Excerpt
   document.getElementById('dp-excerpt').innerHTML = hlNums(src.note);
-  // Claims for this source
-  const myCells = [];
-  for (const row of state.claims) {
-    const cell = row.cells.find(c => c.source.toLowerCase() === src.name.toLowerCase());
-    if (cell) myCells.push({ claim: row.claim, value: cell.value, conflicts: cell.status === 'conflict' });
+  // Disputed claims this source weighed in on (from the DIVERGENCE topics).
+  const nameLc = src.name.toLowerCase();
+  const myTopics = [];   // {topic, myText, others:[{source,text}]}
+  for (const t of (state.divergences || [])) {
+    const mine = t.points.find(p => p.source && p.source.toLowerCase() === nameLc);
+    if (!mine) continue;
+    const others = t.points.filter(p => p.source && p.source.toLowerCase() !== nameLc);
+    myTopics.push({ topic: t.topic, myText: mine.text, others });
   }
-  document.getElementById('dp-claims').innerHTML = myCells.length ? myCells.map(c => `
-    <div class="claim-chip ${c.conflicts ? 'conflict' : 'agree'}">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${c.conflicts ? '#EF9F27' : '#1D9E75'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-top:1px;flex-shrink:0">
-        ${c.conflicts ? '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>'
-         : '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>'}
+  // "Extracted claims": what THIS source said on each disputed topic.
+  document.getElementById('dp-claims').innerHTML = myTopics.length ? myTopics.map(t => `
+    <div class="claim-chip conflict">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#EF9F27" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-top:1px;flex-shrink:0">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
       </svg>
       <div>
-        <div class="claim-chip-lbl ${c.conflicts ? 'conflict' : 'agree'}">${esc(c.claim)}</div>
-        <div class="claim-chip-val">${esc(c.value)}</div>
+        <div class="claim-chip-lbl conflict">${esc(t.topic)}</div>
+        <div class="claim-chip-val">${esc(t.myText || '')}</div>
       </div>
     </div>`).join('')
-  : '<div style="color:var(--text3);font-size:12px">No claims found for this source in the claim matrix.</div>';
-  // Cross-source alignment
-  const alignMap = {};
-  for (const row of state.claims) {
-    const myCell = row.cells.find(c => c.source.toLowerCase() === src.name.toLowerCase());
-    if (!myCell) continue;
-    for (const cell of row.cells) {
-      if (cell.source.toLowerCase() === src.name.toLowerCase()) continue;
-      if (!alignMap[cell.source]) alignMap[cell.source] = { agree: 0, conflict: 0 };
-      if (myCell.status === 'agree' && cell.status === 'agree') alignMap[cell.source].agree++;
-      else alignMap[cell.source].conflict++;
+  : '<div style="color:var(--text3);font-size:12px">This source is not part of any flagged divergence.</div>';
+  // "Cross-source alignment": the other sources contesting the same topics.
+  const alignRows = [];
+  for (const t of myTopics) {
+    for (const o of t.others) {
+      alignRows.push(`<div class="align-row"><span class="align-name">${esc(o.source)}</span><span class="align-tag conflicts">Differs on ${esc(t.topic)}</span></div>`);
     }
   }
-  const alignEntries = Object.entries(alignMap);
-  document.getElementById('dp-align').innerHTML = alignEntries.length ? alignEntries.map(([name, c]) => {
-    const agrees = c.agree >= c.conflict;
-    return `<div class="align-row"><span class="align-name">${esc(name)}</span><span class="align-tag ${agrees ? 'agrees' : 'conflicts'}">${agrees ? 'Agrees' : 'Conflicts'}</span></div>`;
-  }).join('') : '<div style="color:var(--text3);font-size:12px">Cross-source alignment not available.</div>';
+  document.getElementById('dp-align').innerHTML = alignRows.length
+    ? alignRows.join('')
+    : '<div style="color:var(--text3);font-size:12px">No cross-source disagreement involving this source.</div>';
 
   dp.classList.add('open');
 }
@@ -772,67 +770,48 @@ function _extractNum(v) { const m = (v || '').replace(/,/g, '').match(/\d+/); re
 function _isNumVal(v)   { return _extractNum(v) !== null; }
 function _toNum(v)      { return _extractNum(v) || 0; }
 
+// Parse the DIVERGENCE section (FOUR-section format, no CLAIM MATRIX) into
+// [{topic, points:[{source, date, text, n}]}]. Each "**Topic**" header starts a
+// divergence; each "- source (date): text" bullet is one source's position.
+// Numbers are read from the bullet TEXT only, never the (date) parenthetical.
+function parseDivergences(divText) {
+  const topics = [];
+  let cur = null;
+  for (const raw of (divText || '').split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (/no material diverg/i.test(line)) return [];
+    const hb = line.match(/^\*\*(.+?)\*\*:?\s*$/);          // **Topic**
+    if (hb) { cur = { topic: hb[1].trim(), points: [] }; topics.push(cur); continue; }
+    if (/^significance\s*:/i.test(line)) continue;          // skip significance line
+    const bm = line.match(/^[-*•]\s*(.+)$/);                // - source (date): text
+    if (bm && cur) {
+      const body = bm[1].trim();
+      let source = '', date = '', text = body;
+      const m = body.match(/^([^:(]+?)\s*(?:\(([^)]*)\))?\s*:\s*(.+)$/);
+      if (m) { source = m[1].trim(); date = (m[2] || '').trim(); text = m[3].trim(); }
+      const cleanText = text.replace(/\([^)]*\)/g, ' ');    // drop parentheticals
+      const nm = cleanText.replace(/,/g, '').match(/\d{2,}/);
+      cur.points.push({ source, date, text, n: nm ? parseInt(nm[0], 10) : null });
+    }
+  }
+  return topics.filter(t => t.points.length >= 1);
+}
+
 function renderRangeBar() {
   const el = document.getElementById('dm-range');
   const fmt = n => n.toLocaleString();
 
-  // Build candidate rows from CLAIM MATRIX: need ≥2 numeric cells (non-numeric cells ok)
-  let rows = state.claims.filter(row => {
-    const numCells = row.cells.filter(c => c.value && c.value !== '—' && _isNumVal(c.value));
-    return numCells.length >= 2;
-  }).map(row => ({
-    label: row.claim,
-    points: row.cells
-      .filter(c => c.value && c.value !== '—' && _isNumVal(c.value))
-      .map(c => ({ source: c.source, n: _toNum(c.value), isConflict: c.status === 'conflict' })),
-  }));
-
-  // Fallback 1: extract numbers > 99 from source notes
-  if (!rows.length && state.sources.length >= 2) {
-    const points = state.sources
-      .map(s => {
-        const n = _toNum(s.note);
-        return n > 99 ? { source: s.name, n, isConflict: s.isConflict } : null;
-      })
-      .filter(Boolean);
-    if (points.length >= 2) {
-      const divLower = state.divergence.toLowerCase();
-      const label = divLower.includes('death') || divLower.includes('killed') ? 'deaths reported'
-                  : divLower.includes('missing') ? 'missing persons reported'
-                  : divLower.includes('displace') ? 'displaced persons reported'
-                  : divLower.includes('wound') || divLower.includes('injur') ? 'injured reported'
-                  : 'figures reported';
-      rows = [{ label, points }];
-    }
-  }
-
-  // Fallback 2: scan DIVERGENCE lines for "SourceName: N" or "SourceName reported N"
-  if (!rows.length && state.sources.length >= 2) {
-    const srcNames = state.sources.map(s => s.name);
-    const numsBySource = {};
-    for (const line of state.divergence.split('\n')) {
-      for (const name of srcNames) {
-        const pat = new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[^\\d]*(\\d[\\d,]*)', 'i');
-        const m = line.match(pat);
-        if (m) { numsBySource[name] = parseInt(m[1].replace(/,/g, ''), 10); }
-      }
-    }
-    const points = Object.entries(numsBySource)
-      .filter(([, n]) => n > 99)
-      .map(([name, n]) => {
-        const s = state.sources.find(x => x.name === name);
-        return { source: name, n, isConflict: s ? s.isConflict : false };
-      });
-    if (points.length >= 2) {
-      const divLower = state.divergence.toLowerCase();
-      const label = divLower.includes('death') || divLower.includes('killed') ? 'deaths reported'
-                  : divLower.includes('missing') ? 'missing persons reported'
-                  : divLower.includes('displace') ? 'displaced persons reported'
-                  : divLower.includes('wound') || divLower.includes('injur') ? 'injured reported'
-                  : 'figures reported';
-      rows = [{ label, points }];
-    }
-  }
+  // Build numeric range bars from the parsed DIVERGENCE topics. A topic becomes a
+  // bar only if ≥2 of its source points carry a number > 99 (so magnitudes like
+  // 6.4 and pure-text divergences produce no bogus bar). Numbers come from the
+  // bullet text, never the (date), so years are never charted as casualties.
+  const rows = (state.divergences || []).map(t => ({
+    label: t.topic,
+    points: t.points
+      .filter(p => p.n !== null && p.n > 99)
+      .map(p => ({ source: p.source, n: p.n, isConflict: true })),
+  })).filter(r => r.points.length >= 2);
 
   if (!rows.length) { el.innerHTML = ''; return; }
 
@@ -891,17 +870,18 @@ function renderSplitZones() {
   const agreedHtml = agreedLines.length >= 2
     ? agreedLines.map(l => `<div class="zone-row"><span class="zone-check">✓</span><span class="zone-text">${mdInline(l)}</span></div>`).join('')
     : '<div class="zone-empty">Insufficient cross-source agreement found.</div>';
-  const conflictClaims = state.claims.filter(r => r.cells.some(c => c.status === 'conflict'));
-  const disputedHtml = conflictClaims.length
-    ? conflictClaims.map(row => {
-        const cc = row.cells.filter(c => c.status === 'conflict' && c.value && c.value !== '—');
-        const pillsHtml = cc.map((c, i) =>
-          (i > 0 ? '<span class="disp-sep">←→</span>' : '') +
-          `<span class="val-pill">${esc(c.source)} ${esc(c.value)}</span>`
-        ).join('');
-        return `<div class="disp-row"><span class="disp-name">${esc(row.claim)}</span>${pillsHtml}</div>`;
+  const disputedHtml = (state.divergences || []).length
+    ? state.divergences.map(t => {
+        const pillsHtml = t.points.map((p, i) => {
+          // Pill shows source + its key figure (or a short snippet if no number)
+          const val = p.n !== null ? p.n.toLocaleString()
+                    : (p.text ? p.text.slice(0, 38) + (p.text.length > 38 ? '…' : '') : '');
+          return (i > 0 ? '<span class="disp-sep">←→</span>' : '') +
+                 `<span class="val-pill">${esc(p.source)}${val ? ' ' + esc(val) : ''}</span>`;
+        }).join('');
+        return `<div class="disp-row"><span class="disp-name">${esc(t.topic)}</span>${pillsHtml}</div>`;
       }).join('')
-    : '<div class="zone-empty">No direct contradictions detected.</div>';
+    : '<div class="zone-empty">No material divergences identified.</div>';
   el.innerHTML = `
     <div class="agreed-zone"><div class="zone-lbl green">Confirmed across sources</div>${agreedHtml}</div>
     <div class="disputed-zone"><div class="zone-lbl amber">Disputed</div>${disputedHtml}</div>`;
@@ -909,32 +889,29 @@ function renderSplitZones() {
 
 function renderSpotlightCards() {
   const el = document.getElementById('dm-spotlight');
-  const conflictClaims = state.claims.filter(r => r.cells.some(c => c.status === 'conflict'));
-  if (!conflictClaims.length) { el.innerHTML = ''; return; }
+  const topics = state.divergences || [];
+  if (!topics.length) { el.innerHTML = ''; return; }
   const srcTypeMap = {};
   state.sources.forEach(s => { srcTypeMap[s.name.toLowerCase()] = s.type; });
   el.innerHTML = '<div class="sec-hdg" style="margin-top:4px">Claim breakdown</div>' +
-    conflictClaims.map(row => {
-      const hasConflict = row.cells.some(c => c.status === 'conflict');
-      const valued = row.cells.filter(c => c.value && c.value !== '—' && _isNumVal(c.value));
-      if (!valued.length) return '';
-      const srcRowsHtml = valued.map(c => {
-        const t = srcTypeMap[c.source.toLowerCase()] || 'unknown';
-        const isConflict = c.status === 'conflict';
+    topics.map(t => {
+      const srcRowsHtml = t.points.map(p => {
+        const ty = srcTypeMap[(p.source || '').toLowerCase()] || 'unknown';
+        const val = p.n !== null ? p.n.toLocaleString() : (p.text || '');
         return `<div class="spc-src-row">
-          <span class="badge ${t}">${esc(typeLabel(t))}</span>
-          <span class="spc-src-name">${esc(c.source)}</span>
-          <span class="spc-val ${isConflict ? 'conflict' : 'agree'}">${esc(c.value)}</span>
+          <span class="badge ${ty}">${esc(typeLabel(ty))}</span>
+          <span class="spc-src-name">${esc(p.source || '—')}</span>
+          <span class="spc-val conflict">${esc(val)}</span>
         </div>`;
       }).join('');
       return `<div class="spc-card">
         <div class="spc-hdr">
-          <span class="spc-claim">${esc(row.claim)}</span>
-          <span class="spc-badge ${hasConflict ? 'conflict' : 'agree'}">${hasConflict ? '⚠ Conflict' : '✓ Consistent'}</span>
+          <span class="spc-claim">${esc(t.topic)}</span>
+          <span class="spc-badge conflict">⚠ ${t.points.length} sources differ</span>
         </div>
         ${srcRowsHtml}
       </div>`;
-    }).filter(Boolean).join('');
+    }).join('');
 }
 
 function renderDivergenceMap() {
@@ -1042,15 +1019,15 @@ document.getElementById('qform').addEventListener('submit', async e => {
     state.execTime   = data.execution_time_seconds || 0;
     state.indexed    = data.sources_indexed || 0;
 
-    state.sources  = parseSources(srcSec);
-    const claimSec = extractSection(text, 'CLAIM MATRIX');
-    state.claims   = parseClaimMatrix(claimSec);
-    annotateConflicts(state.sources, state.claims);
-    state.coverage = [];
-    state.timeline = buildTimeline(state.sources, state.claims);
+    state.sources     = parseSources(srcSec);
+    state.divergences = parseDivergences(state.divergence);
+    state.claims      = [];          // CLAIM MATRIX removed from prompt (Day 7)
+    annotateConflicts(state.sources, state.divergences);
+    state.coverage    = [];
+    state.timeline    = buildTimeline(state.sources, state.claims);
 
-    // Metrics
-    const divCount = state.divergence.split('\n').filter(l => /^\s*[-*•]/.test(l)).length;
+    // Metrics — count actual divergence topics, not bullet lines
+    const divCount = state.divergences.length;
     document.getElementById('m-sources').textContent   = state.sources.length || '—';
     document.getElementById('m-divergent').textContent = divCount || '—';
     document.getElementById('m-dates').textContent     = buildDateRange(state.sources);
