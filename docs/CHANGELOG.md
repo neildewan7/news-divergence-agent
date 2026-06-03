@@ -348,9 +348,39 @@
 - Whether the MCP `platform_core_search` tool issues a semantic vs `match` query
   against the new field is unconfirmed — verify after cutover.
 
+### Retrieval evaluation (BM25 vs semantic vs hybrid)
+Tested locally with `scripts/compare_search.py` against `news-articles-v2`.
+Honest conclusion: **pure semantic is NOT a clear win; hybrid (RRF) is the right
+relevance architecture; neither solves cross-language surfacing for English queries.**
+- BM25 rarely whiffs on this corpus — event vocabulary is dense (a paraphrase like
+  "fatalities from the deluge" still returned 198 BM25 hits).
+- Pure semantic sometimes pulls noise (opinion/sanctions pieces) and its scores
+  cluster tightly (0.92–0.95), weakening ranking.
+- **Hybrid RRF wins on relevance**: for "death toll figures reported by different
+  authorities", semantic pulled noise, BM25 missed aa.com.tr "3,845 dead", and
+  hybrid surfaced the death-toll docs AND dropped the noise. RRF confirmed working
+  on the cluster (`retriever.rrf`, rank_window_size=50, rank_constant=20).
+- **Cross-language gap remains**: English queries return 0 non-English docs in the
+  top 6–10 under all three methods — the 103 English docs outrank the 34 Arabic /
+  39 French ones. Arabic IS retrievable via an Arabic-language query. Surfacing
+  non-English for an English query needs an explicit mechanism (per-language
+  retrieval pass, query translation for retrieval only, or non-English boosting) —
+  hybrid alone does not do it.
+- Added `scripts/compare_search.py` — reusable read-only BM25/semantic/hybrid
+  comparison harness; takes a query arg or runs default demo queries.
+
+### Recommendation
+Hold the cutover. If/when cutting over, use **hybrid RRF**, not pure semantic.
+Treat cross-language surfacing as a separate feature (per-language retrieval),
+not something the embedding model gives for free on an English-dominated corpus.
+
 ### Open
-- Cutover `news-articles` to the semantic multilingual mapping (destructive — reindex)
-- Confirm Agent Builder tool uses the semantic field post-cutover
+- Decide cutover architecture: hybrid RRF (not pure semantic) against a semantic
+  `news-articles`
+- Cross-language surfacing mechanism (per-language retrieval pass / retrieval-only
+  query translation)
+- Confirm Agent Builder MCP tool can issue an RRF/semantic query (it may only do
+  `match`) — gating factor for whether the agent benefits at all
 - Re-examine stale language codes from pre-Day-7 docs ("gr"→"el", "in"/"ch"/"cz"
   fallback artifacts) on next clean reindex
 - Cloud Run redeployment
