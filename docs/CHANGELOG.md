@@ -374,6 +374,33 @@ Hold the cutover. If/when cutting over, use **hybrid RRF**, not pure semantic.
 Treat cross-language surfacing as a separate feature (per-language retrieval),
 not something the embedding model gives for free on an English-dominated corpus.
 
+### MCP tool investigation — GATING QUESTION RESOLVED (favorably)
+Dumped all 22 Agent Builder MCP tools. `platform_core_search` description:
+"supports both full-text relevance searches and structured analytical queries…
+will automatically select the best index." It is **mapping-aware** and takes an
+optional `index` parameter.
+Verified by calling the tool directly (the agent's real search path) against both
+indices with a low-overlap paraphrase, "fatalities from the deluge that swept away
+neighbourhoods":
+- `index=news-articles` (BM25, no semantic field) → returned an OFF-TOPIC article
+  about Houthi attacks on Red Sea ships. BM25 whiffed on the paraphrase.
+- `index=news-articles-v2` (semantic field) → returned the CORRECT docs: "Death
+  toll rises to 47… flood swept through… washing away houses", and "death toll…
+  surpassed 11,000… flood victims in Libya".
+Conclusions:
+1. The agent's own search tool auto-uses semantic search when the index has a
+   `semantic_text` field — **no tool reconfiguration needed**.
+2. The semantic field materially improves the agent's retrieval.
+3. `platform_core_search` accepts an `index` param → **non-destructive cutover is
+   possible**: point the agent + pipeline at `news-articles-v2`, leave the BM25
+   `news-articles` as a fallback. No destructive delete/recreate required.
+
+### Recommended next step
+Non-destructive cutover: (a) update `src/app.py` SYSTEM_PROMPT to instruct the
+agent to search index `news-articles-v2`; (b) repoint `gdelt_pipeline.py` +
+`index_test_data.py` writes to `news-articles-v2`; (c) end-to-end test. Optionally
+layer hybrid RRF later. Cross-language surfacing remains a separate follow-up.
+
 ### Open
 - Decide cutover architecture: hybrid RRF (not pure semantic) against a semantic
   `news-articles`
