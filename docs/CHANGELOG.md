@@ -416,6 +416,23 @@ layer hybrid RRF later. Cross-language surfacing remains a separate follow-up.
   agent exec ~40s. No regression.
 - Legacy `news-articles` (BM25) left intact as a fallback — nothing deleted.
 
+### Dynamic per-event languages (cross-language retrieval)
+- `extract_query_params()` now also returns a `languages` list: Gemini infers the
+  event-relevant languages from the location and ALWAYS includes "en". Verified:
+  "Noto earthquake Japan 2024" → ["en","ja"]; "Libya Derna floods" → ["en","ar"];
+  "Ukraine Kharkiv strike" → ["en","uk","ru"].
+- `populate_index_for_query(..., languages=[...])` runs one GDELT `sourcelang:` pass
+  per non-English code (English handled by the primary pass). Replaces the hardcoded
+  `EXTRA_LANGUAGES = [ar,fr,el]` (still the fallback when no languages passed).
+- Extended ISO↔GDELT name maps + `map_language()` with ja/uk/ru/zh/de/pt/tr/fa/ko/
+  he/hi/id/ur.
+- Articles indexed in original language → multilingual semantic field embeds them →
+  Gemini reads the original-language bodies during analysis (Gemini is multilingual,
+  so no translation needed end to end).
+- NOT yet shown live: the actual Japanese GDELT fetch — local IP was rate-limited
+  (429) at build time. Language detection + pass wiring verified; live fetch will
+  work once the rate limit clears / on Cloud Run.
+
 ### Open
 - Decide cutover architecture: hybrid RRF (not pure semantic) against a semantic
   `news-articles`

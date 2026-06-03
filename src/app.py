@@ -206,8 +206,10 @@ def _gdelt_status() -> str:
 def extract_query_params(user_query: str) -> dict:
     """
     Ask Gemini to extract GDELT search parameters from a natural-language query.
-    Returns {"keywords": str, "start_date": str, "end_date": str} in YYYYMMDD000000 format.
-    Falls back to the past 180 days if extraction fails.
+    Returns {"keywords", "start_date", "end_date", "languages"} where languages is
+    a list of ISO 639-1 codes relevant to the event (always includes "en", plus the
+    local language(s) of the event location — e.g. Japan -> ["en","ja"], Libya ->
+    ["en","ar"]). Falls back to the past 180 days and ["en"] if extraction fails.
     """
     today = datetime.utcnow()
     today_str = today.strftime("%Y%m%d") + "000000"
@@ -215,6 +217,7 @@ def extract_query_params(user_query: str) -> dict:
         "keywords": user_query,
         "start_date": (today - timedelta(days=180)).strftime("%Y%m%d") + "000000",
         "end_date": today_str,
+        "languages": ["en"],
     }
 
     prompt = (
@@ -223,6 +226,11 @@ def extract_query_params(user_query: str) -> dict:
         "  keywords: AND-separated search terms (no quotes, no dates)\n"
         f"  start_date: format YYYYMMDD000000 (today is {today_str[:8]})\n"
         "  end_date: format YYYYMMDD000000\n"
+        "  languages: array of ISO 639-1 codes for languages this event is likely "
+        "reported in. ALWAYS include \"en\". Add the local language(s) of the event "
+        "location and any major regional languages. Examples: a Japan event -> "
+        "[\"en\",\"ja\"]; a Libya event -> [\"en\",\"ar\"]; a Ukraine event -> "
+        "[\"en\",\"uk\",\"ru\"]; a France event -> [\"en\",\"fr\"]. Max 4 codes.\n"
         "If no date range is mentioned, set end_date to today and start_date to 180 days ago.\n"
         "Return ONLY the JSON object, no markdown, no explanation.\n"
         f"Query: {user_query}"
@@ -241,11 +249,28 @@ def extract_query_params(user_query: str) -> dict:
             keywords = str(parsed.get("keywords", user_query)).strip()
             start_date = str(parsed.get("start_date", fallback["start_date"])).strip()
             end_date = str(parsed.get("end_date", fallback["end_date"])).strip()
+            # Normalise languages: list of 2-letter codes, always include en, cap at 4
+            raw_langs = parsed.get("languages", ["en"])
+            if isinstance(raw_langs, str):
+                raw_langs = [raw_langs]
+            languages = []
+            for lc in (raw_langs or []):
+                lc = str(lc).strip().lower()[:2]
+                if lc and lc not in languages:
+                    languages.append(lc)
+            if "en" not in languages:
+                languages.insert(0, "en")
+            languages = languages[:4] or ["en"]
             # Sanity-check: dates must be 14-char numeric strings
             if (keywords and
                     re.fullmatch(r"\d{14}", start_date) and
                     re.fullmatch(r"\d{14}", end_date)):
-                return {"keywords": keywords, "start_date": start_date, "end_date": end_date}
+                return {
+                    "keywords": keywords,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "languages": languages,
+                }
     except Exception as exc:
         print(f"extract_query_params failed: {exc}")
 
@@ -291,6 +316,8 @@ def analyze():
     keywords = params["keywords"]
     start_date = params["start_date"]
     end_date = params["end_date"]
+    languages = params.get("languages", ["en"])
+    print(f"Query params: keywords={keywords!r} languages={languages}")
 
     if want_debug:
         docs_before = _es_count()
@@ -333,6 +360,7 @@ def analyze():
                     keywords,
                     start_date=start_date,
                     end_date=end_date,
+                    languages=languages,
                 )
             except Exception as exc:
                 print(f"GDELT pipeline error (non-fatal): {exc}")

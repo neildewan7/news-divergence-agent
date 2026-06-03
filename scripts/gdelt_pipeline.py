@@ -16,16 +16,32 @@ GDELT_BASE = "https://api.gdeltproject.org/api/v2/doc/doc"
 GDELT_HEADERS = {"User-Agent": "news-divergence-agent/1.0"}
 GDELT_SLEEP = 5  # minimum seconds between consecutive API calls
 
-# Languages to query in addition to English, in GDELT's full-name format.
-# Articles are stored in their original language; Elastic's multilingual
-# semantic_text field handles cross-language retrieval — no translation step.
+# ISO 639-1 -> GDELT sourcelang full-name. Articles are stored in their original
+# language; Elastic's multilingual semantic_text field handles cross-language
+# retrieval — no translation step. The set of languages queried per request is
+# chosen dynamically by Gemini based on the event location (see
+# extract_query_params in app.py), so this map just needs broad coverage.
 GDELT_LANGUAGE_NAMES = {
     "ar": "Arabic",
     "fr": "French",
     "el": "Greek",
     "es": "Spanish",
     "it": "Italian",
+    "ja": "Japanese",
+    "uk": "Ukrainian",
+    "ru": "Russian",
+    "zh": "Chinese",
+    "de": "German",
+    "pt": "Portuguese",
+    "tr": "Turkish",
+    "fa": "Persian",
+    "ko": "Korean",
+    "he": "Hebrew",
+    "hi": "Hindi",
+    "id": "Indonesian",
+    "ur": "Urdu",
 }
+# Default extra languages when the caller doesn't specify any (back-compat).
 EXTRA_LANGUAGES = ["ar", "fr", "el"]
 
 _WIRE = {
@@ -95,6 +111,15 @@ def map_language(gdelt_language: str) -> str:
         "Portuguese": "pt",
         "Russian": "ru",
         "Turkish": "tr",
+        "Japanese": "ja",
+        "Ukrainian": "uk",
+        "Chinese": "zh",
+        "Persian": "fa",
+        "Korean": "ko",
+        "Hebrew": "he",
+        "Hindi": "hi",
+        "Indonesian": "id",
+        "Urdu": "ur",
     }
     if gdelt_language in mapping:
         return mapping[gdelt_language]
@@ -371,6 +396,7 @@ def populate_index_for_query(
     start_date: str = None,
     end_date: str = None,
     event_id: str = None,
+    languages: list = None,
 ) -> int:
     """
     Full pipeline: GDELT search → text fetch → Elastic index.
@@ -378,8 +404,12 @@ def populate_index_for_query(
     Runs multiple passes:
       Pass 1: English, primary keywords
       Pass 2: English, synonym variants (if any synonyms found)
-      Pass 3-5: French, Arabic, Greek with primary keywords
+      Pass 3+: one pass per non-English language in `languages`, using GDELT's
+               sourcelang: filter (e.g. a Japan event → Japanese pass). Articles
+               are stored in their original language for multilingual semantic search.
 
+    `languages` is a list of ISO 639-1 codes (e.g. ["en","ja"]) chosen per-event by
+    Gemini. If None, falls back to English + the default EXTRA_LANGUAGES.
     Passes end_date as max_date to reject future-recrawled articles.
     Returns count of newly indexed articles.
     """
@@ -392,6 +422,13 @@ def populate_index_for_query(
 
     if event_id is None:
         event_id = f"query-{start_date[:8]}-{end_date[:8]}"
+
+    # Resolve the non-English passes from the requested languages, keeping only
+    # codes GDELT can target by name. Drop "en" (handled by the primary pass).
+    if languages:
+        extra_langs = [lc for lc in languages if lc != "en" and lc in GDELT_LANGUAGE_NAMES]
+    else:
+        extra_langs = list(EXTRA_LANGUAGES)
 
     total_found = 0
     total_indexed = 0
@@ -422,8 +459,8 @@ def populate_index_for_query(
         time.sleep(GDELT_SLEEP)
         _run_pass(syn_q, "en-synonyms")
 
-    # Passes 3-5: Language-specific
-    for lang_iso in EXTRA_LANGUAGES:
+    # Passes 3+: one per event-relevant non-English language
+    for lang_iso in extra_langs:
         lang_name = GDELT_LANGUAGE_NAMES[lang_iso]
         lang_query = f"{query} sourcelang:{lang_name}"
         print(f"Fetching {lang_name} articles...")
